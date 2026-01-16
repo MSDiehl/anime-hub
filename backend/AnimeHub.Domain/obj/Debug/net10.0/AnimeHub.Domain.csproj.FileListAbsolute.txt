@@ -1,0 +1,11 @@
+C:\Users\diehl\repos\animehub\backend\AnimeHub.Domain\bin\Debug\net10.0\AnimeHub.Domain.deps.json
+C:\Users\diehl\repos\animehub\backend\AnimeHub.Domain\bin\Debug\net10.0\AnimeHub.Domain.dll
+C:\Users\diehl\repos\animehub\backend\AnimeHub.Domain\bin\Debug\net10.0\AnimeHub.Domain.pdb
+C:\Users\diehl\repos\animehub\backend\AnimeHub.Domain\obj\Debug\net10.0\AnimeHub.Domain.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\diehl\repos\animehub\backend\AnimeHub.Domain\obj\Debug\net10.0\AnimeHub.Domain.AssemblyInfoInputs.cache
+C:\Users\diehl\repos\animehub\backend\AnimeHub.Domain\obj\Debug\net10.0\AnimeHub.Domain.AssemblyInfo.cs
+C:\Users\diehl\repos\animehub\backend\AnimeHub.Domain\obj\Debug\net10.0\AnimeHub.Domain.csproj.CoreCompileInputs.cache
+C:\Users\diehl\repos\animehub\backend\AnimeHub.Domain\obj\Debug\net10.0\AnimeHub.Domain.dll
+C:\Users\diehl\repos\animehub\backend\AnimeHub.Domain\obj\Debug\net10.0\refint\AnimeHub.Domain.dll
+C:\Users\diehl\repos\animehub\backend\AnimeHub.Domain\obj\Debug\net10.0\AnimeHub.Domain.pdb
+C:\Users\diehl\repos\animehub\backend\AnimeHub.Domain\obj\Debug\net10.0\ref\AnimeHub.Domain.dll
