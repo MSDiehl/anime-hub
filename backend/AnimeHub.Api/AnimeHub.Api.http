@@ -1,0 +1,6 @@
+@AnimeHub.Api_HostAddress = http://localhost:5162
+
+GET {{AnimeHub.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
