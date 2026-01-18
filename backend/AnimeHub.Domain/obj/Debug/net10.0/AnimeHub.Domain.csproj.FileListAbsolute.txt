@@ -9,3 +9,4 @@ C:\Users\diehl\repos\animehub\backend\AnimeHub.Domain\obj\Debug\net10.0\AnimeHub
 C:\Users\diehl\repos\animehub\backend\AnimeHub.Domain\obj\Debug\net10.0\refint\AnimeHub.Domain.dll
 C:\Users\diehl\repos\animehub\backend\AnimeHub.Domain\obj\Debug\net10.0\AnimeHub.Domain.pdb
 C:\Users\diehl\repos\animehub\backend\AnimeHub.Domain\obj\Debug\net10.0\ref\AnimeHub.Domain.dll
+C:\Users\diehl\repos\animehub\backend\AnimeHub.Domain\obj\Debug\net10.0\AnimeHub.Domain.sourcelink.json
