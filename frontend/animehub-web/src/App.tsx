@@ -1,542 +1,330 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import Home from "./Home";
 
-type AnimeSearchItem = {
-  aniListId: number;
-  titleRomaji?: string;
-  titleEnglish?: string;
-  titleNative?: string;
-  format?: string;
-  status?: string;
-  episodes?: number | null;
-  season?: string | null;
-  seasonYear?: number | null;
-  averageScore?: number | null;
-  popularity?: number | null;
-  coverImageUrl?: string | null;
-};
-
-type TrendingCard = {
-  title: string;
-  subtitle: string;
-  cover: string;
-};
-
-type TrackedShow = {
-  id: string;
-  aniListId: number;
-  title: string;
-  coverImageUrl?: string | null;
-  format?: string | null;
-  status?: string | null;
-  episodes?: number | null;
-  season?: string | null;
-  seasonYear?: number | null;
-  averageScore?: number | null;
-  popularity?: number | null;
-};
-
-const dummyMostTracked: TrendingCard[] = [
-  {
-    title: "Frieren: Beyond Journey’s End",
-    subtitle: "Most tracked this week",
-    cover:
-      "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx154587-6m3bQK8cM6oG.jpg",
-  },
-  {
-    title: "Jujutsu Kaisen",
-    subtitle: "Community favorite",
-    cover:
-      "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx101517-8Zp8pWQbHjvT.jpg",
-  },
-  {
-    title: "One Piece",
-    subtitle: "Always trending",
-    cover:
-      "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx21-YCDoj1EkxY8J.jpg",
-  },
-  {
-    title: "Attack on Titan",
-    subtitle: "Top rated",
-    cover:
-      "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx16498-1K7uTzZQ7GJY.jpg",
-  },
-];
+type Me = { id?: string; email?: string };
 
 export default function App() {
-  const [q, setQ] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [items, setItems] = useState<AnimeSearchItem[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [hasSearched, setHasSearched] = useState(false);
+  const [me, setMe] = useState<Me | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // tracked
-  const [tracked, setTracked] = useState<TrackedShow[]>([]);
-  const [trackingIds, setTrackingIds] = useState<Set<number>>(new Set());
-
-  const canSearch = useMemo(() => q.trim().length >= 2, [q]);
-  const trackedIds = useMemo(
-    () => new Set(tracked.map((t) => t.aniListId)),
-    [tracked],
-  );
-
-  useEffect(() => {
-    loadTracked();
-  }, []);
-
-  async function loadTracked() {
-    try {
-      const res = await fetch("/api/tracked");
-      if (!res.ok) return;
-      setTracked(await res.json());
-    } catch {
-      // ignore for now
-    }
-  }
-
-  async function runSearch() {
-    const query = q.trim();
-    if (query.length < 2) return;
-
-    setError(null);
+  async function refreshMe() {
     setLoading(true);
-    setHasSearched(true);
-
     try {
-      const res = await fetch(
-        `/api/anime/search?q=${encodeURIComponent(query)}&perPage=12`,
-      );
-      if (!res.ok) throw new Error(await res.text());
-      setItems(await res.json());
-    } catch (e: any) {
-      setError(e?.message ?? "Search failed");
+      const res = await fetch("/api/auth/me", { credentials: "include" });
+      if (!res.ok) {
+        setMe(null);
+      } else {
+        setMe(await res.json());
+      }
     } finally {
       setLoading(false);
     }
   }
 
-  function resetToHero() {
-    setHasSearched(false);
-    setItems([]);
+  useEffect(() => {
+    refreshMe();
+  }, []);
+
+  if (loading) return <div style={{ padding: 24 }}>Loading…</div>;
+  if (!me) return <AuthPage onAuthed={refreshMe} />;
+
+  return (
+    <Home
+      onLogout={async () => {
+        await fetch("/api/auth/logout", {
+          method: "POST",
+          credentials: "include",
+        });
+        await refreshMe();
+      }}
+    />
+  );
+}
+
+function AuthPage({ onAuthed }: { onAuthed: () => Promise<void> | void }) {
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
     setError(null);
-  }
-
-  function bestTitle(x: AnimeSearchItem) {
-    return x.titleEnglish || x.titleRomaji || x.titleNative || "Untitled";
-  }
-
-  async function trackShow(x: AnimeSearchItem) {
-    const id = x.aniListId;
-    if (trackedIds.has(id)) return;
-
-    // mark "tracking..." for this specific card
-    setTrackingIds((prev) => new Set(prev).add(id));
-
+    setBusy(true);
     try {
-      const res = await fetch("/api/tracked", {
+      const url = mode === "login" ? "/api/auth/login" : "/api/auth/register";
+      const body =
+        mode === "login"
+          ? { email, password }
+          : { email, password, displayName };
+
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          aniListId: x.aniListId,
-          title: bestTitle(x),
-          coverImageUrl: x.coverImageUrl,
-          format: x.format,
-          status: x.status,
-          episodes: x.episodes,
-          season: x.season,
-          seasonYear: x.seasonYear,
-          averageScore: x.averageScore,
-          popularity: x.popularity,
-        }),
+        credentials: "include",
+        body: JSON.stringify(body),
       });
 
-      // 409 means already tracked (safe to treat as success)
-      if (!res.ok && res.status !== 409) {
-        throw new Error(await res.text());
+      if (!res.ok) {
+        let msg = "Request failed";
+        const ct = res.headers.get("content-type") || "";
+        if (ct.includes("application/json")) {
+          const data = await res.json().catch(() => null);
+          msg = typeof data === "string" ? data : JSON.stringify(data);
+        } else {
+          msg = `${res.status} ${res.statusText}`;
+        }
+        throw new Error(msg);
       }
-
-      await loadTracked();
+      await onAuthed();
     } catch (e: any) {
-      setError(e?.message ?? "Failed to track show");
+      setError(e?.message ?? "Auth failed");
     } finally {
-      setTrackingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
+      setBusy(false);
     }
   }
 
   return (
-    <div style={styles.page}>
-      <div style={styles.bgGlow} />
+    <div style={authStyles.page}>
+      <div style={authStyles.bgGlow} />
 
-      <header style={styles.topBar}>
-        <div style={styles.brand}>AnimeHub</div>
-        <div style={styles.topBarRight}>
-          <span style={styles.pill}>Dashboard</span>
-          <span style={styles.pill}>Forums</span>
-          <span style={styles.pill}>Schedule</span>
-        </div>
-      </header>
-
-      <section
-        style={{
-          ...styles.hero,
-          ...(hasSearched ? styles.heroCompact : styles.heroCentered),
-        }}
-      >
-        <div style={styles.heroInner}>
-          <div style={{ textAlign: "center" }}>
-            <h1 style={styles.h1}>Find your next anime</h1>
-            <p style={styles.sub}>
-              Search, track, and analyze anime — clean, fast, and
-              community-driven.
+      <div style={authStyles.card}>
+        <div style={authStyles.header}>
+          <div>
+            <h1 style={authStyles.title}>AnimeHub</h1>
+            <p style={authStyles.subtitle}>
+              {mode === "login" ? "Sign in to continue" : "Create your account"}
             </p>
           </div>
+        </div>
 
-          <div style={styles.searchRow}>
-            <div style={styles.searchBox}>
+        <div style={authStyles.tabs}>
+          <button
+            onClick={() => setMode("login")}
+            style={tabStyle(mode === "login")}
+          >
+            Sign in
+          </button>
+          <button
+            onClick={() => setMode("register")}
+            style={tabStyle(mode === "register")}
+          >
+            Create account
+          </button>
+        </div>
+
+        <div style={authStyles.form}>
+          {mode === "register" && (
+            <div style={authStyles.field}>
+              <label style={authStyles.label}>Display name</label>
               <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search anime (Naruto, Frieren, One Piece...)"
-                style={styles.input}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && canSearch && !loading) runSearch();
-                  if (e.key === "Escape") resetToHero();
-                }}
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="e.g. Malachi"
+                style={authStyles.input}
+                autoComplete="nickname"
               />
-              <button
-                onClick={runSearch}
-                disabled={!canSearch || loading}
-                style={{
-                  ...styles.searchBtn,
-                  ...(loading || !canSearch ? styles.searchBtnDisabled : null),
-                }}
-              >
-                {loading ? "Searching…" : "Search"}
-              </button>
-            </div>
-
-            {hasSearched && (
-              <button
-                onClick={resetToHero}
-                style={styles.ghostBtn}
-                title="Back to home"
-              >
-                Clear
-              </button>
-            )}
-          </div>
-
-          {error && <div style={styles.error}>{error}</div>}
-
-          {!hasSearched && (
-            <div style={styles.mostTracked}>
-              <div style={styles.sectionHead}>
-                <h2 style={styles.h2}>Most tracked</h2>
-                <span style={styles.muted}>
-                  Dummy cards for now — we’ll wire to DB next.
-                </span>
-              </div>
-
-              <div style={styles.cardGrid}>
-                {dummyMostTracked.map((c) => (
-                  <div key={c.title} style={styles.card}>
-                    <div
-                      style={{
-                        ...styles.cardCover,
-                        backgroundImage: `url(${c.cover})`,
-                      }}
-                    />
-                    <div style={styles.cardBody}>
-                      <div style={styles.cardTitle}>{c.title}</div>
-                      <div style={styles.cardSub}>{c.subtitle}</div>
-                      <button
-                        style={styles.cardBtn}
-                        onClick={() => {
-                          setQ(c.title);
-                          // runSearch(); // optional
-                        }}
-                      >
-                        Search
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
           )}
-        </div>
-      </section>
 
-      <main style={styles.main}>
-        {hasSearched && (
-          <div style={styles.resultsWrap}>
-            <div style={styles.sectionHead}>
-              <h2 style={styles.h2}>Search results</h2>
-              <span style={styles.muted}>Showing top matches from AniList</span>
-            </div>
-
-            <div style={styles.resultsGrid}>
-              {items.map((x) => {
-                const isTracked = trackedIds.has(x.aniListId);
-                const isTracking = trackingIds.has(x.aniListId);
-
-                return (
-                  <div key={x.aniListId} style={styles.resultCard}>
-                    <div
-                      style={{
-                        ...styles.resultCover,
-                        backgroundImage: x.coverImageUrl
-                          ? `url(${x.coverImageUrl})`
-                          : undefined,
-                      }}
-                    />
-                    <div style={styles.resultBody}>
-                      <div style={styles.resultTitle}>{bestTitle(x)}</div>
-
-                      <div style={styles.resultMeta}>
-                        {x.format ?? "—"} • {x.status ?? "—"}
-                        {typeof x.episodes === "number"
-                          ? ` • ${x.episodes} eps`
-                          : ""}
-                      </div>
-
-                      <div style={styles.resultStats}>
-                        <span>Score: {x.averageScore ?? "—"}</span>
-                        <span>Popularity: {x.popularity ?? "—"}</span>
-                      </div>
-
-                      {/* Track ONLY (no external links) */}
-                      <div style={styles.resultActions}>
-                        <button
-                          style={{
-                            ...styles.primaryBtn,
-                            ...(isTracked ? styles.primaryBtnTracked : null),
-                            ...(isTracking ? styles.primaryBtnDisabled : null),
-                          }}
-                          onClick={() => trackShow(x)}
-                          disabled={isTracked || isTracking}
-                          title={
-                            isTracked ? "Already tracked" : "Track this show"
-                          }
-                        >
-                          {isTracked
-                            ? "Tracked ✓"
-                            : isTracking
-                              ? "Tracking…"
-                              : "Track"}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {!loading && items.length === 0 && !error && (
-              <div style={styles.empty}>No results. Try another search.</div>
-            )}
+          <div style={authStyles.field}>
+            <label style={authStyles.label}>Email</label>
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              style={authStyles.input}
+              autoComplete="email"
+              inputMode="email"
+            />
           </div>
-        )}
-      </main>
+
+          <div style={authStyles.field}>
+            <label style={authStyles.label}>Password</label>
+            <input
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              type="password"
+              style={authStyles.input}
+              autoComplete={
+                mode === "login" ? "current-password" : "new-password"
+              }
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !busy) submit();
+              }}
+            />
+          </div>
+
+          {error && <div style={authStyles.error}>{error}</div>}
+
+          <button
+            onClick={submit}
+            disabled={busy}
+            style={{
+              ...authStyles.primaryBtn,
+              ...(busy ? authStyles.primaryBtnDisabled : null),
+            }}
+          >
+            {busy
+              ? "Working…"
+              : mode === "login"
+                ? "Sign in"
+                : "Create account"}
+          </button>
+
+          <div style={authStyles.hint}>
+            Tip: press <span style={authStyles.kbd}>Enter</span> to submit
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
+const authStyles: Record<string, React.CSSProperties> = {
   page: {
     minHeight: "100vh",
+    width: "100%",
+    overflow: "hidden", // ✅ kills the unnecessary scrollbar
+    display: "grid",
+    placeItems: "center",
+    position: "relative",
     background:
-      "radial-gradient(1200px 600px at 20% 0%, rgba(108,99,255,.25), transparent 60%), #0b0b10",
+      "radial-gradient(1200px 600px at 20% 0%, rgba(108,99,255,.22), transparent 60%), #0b0b10",
     color: "#fff",
     fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-    position: "relative",
-    overflowX: "hidden",
+    padding: 16,
+    boxSizing: "border-box",
   },
   bgGlow: {
     position: "absolute",
     inset: 0,
     pointerEvents: "none",
     background:
-      "radial-gradient(700px 300px at 70% 20%, rgba(140,80,255,.18), transparent 60%)",
-    filter: "blur(0px)",
-  },
-  topBar: {
-    position: "sticky",
-    top: 0,
-    zIndex: 10,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "16px 18px",
-    backdropFilter: "blur(10px)",
-    background: "rgba(11,11,16,.55)",
-    borderBottom: "1px solid rgba(255,255,255,.06)",
-  },
-  brand: { fontWeight: 800, letterSpacing: 0.2, fontSize: 18 },
-  topBarRight: { display: "flex", gap: 10 },
-  pill: {
-    fontSize: 12,
-    padding: "8px 10px",
-    borderRadius: 999,
-    background: "rgba(255,255,255,.06)",
-    border: "1px solid rgba(255,255,255,.08)",
-    opacity: 0.85,
+      "radial-gradient(700px 340px at 70% 25%, rgba(140,80,255,.18), transparent 60%)",
   },
 
-  hero: {
+  card: {
     width: "100%",
-    transition: "padding 450ms ease, transform 450ms ease",
-  },
-  heroCentered: { padding: "80px 16px 28px" },
-  heroCompact: { padding: "28px 16px 12px" },
-  heroInner: { maxWidth: 980, margin: "0 auto" },
-  h1: { margin: 0, fontSize: 44, lineHeight: 1.05, letterSpacing: -0.6 },
-  sub: { marginTop: 10, marginBottom: 0, opacity: 0.78, fontSize: 16 },
-
-  searchRow: {
-    marginTop: 22,
-    display: "flex",
-    gap: 12,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  searchBox: {
-    width: "100%",
-    maxWidth: 760,
-    display: "flex",
-    gap: 10,
-    padding: 10,
+    maxWidth: 420,
     borderRadius: 18,
+    padding: 16, // tighter than before
     background: "rgba(255,255,255,.06)",
     border: "1px solid rgba(255,255,255,.10)",
-    boxShadow: "0 12px 40px rgba(0,0,0,.25)",
+    boxShadow: "0 18px 70px rgba(0,0,0,.35)",
+    backdropFilter: "blur(10px)",
+    boxSizing: "border-box",
+    position: "relative",
+    zIndex: 1,
   },
+
+  header: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+    marginBottom: 10,
+  },
+  title: {
+    margin: 0,
+    fontSize: 26, // slightly smaller = less whitespace
+    fontWeight: 950 as any,
+    letterSpacing: -0.3,
+  },
+  subtitle: {
+    margin: "6px 0 0",
+    opacity: 0.75,
+    fontSize: 13,
+  },
+
+  tabs: {
+    display: "flex",
+    gap: 8,
+    marginTop: 10,
+  },
+
+  form: {
+    marginTop: 12,
+    display: "grid",
+    gap: 10, // tighter vertical spacing
+  },
+
+  field: {
+    display: "grid",
+    gap: 6,
+  },
+  label: {
+    fontSize: 12,
+    opacity: 0.75,
+  },
+
   input: {
-    flex: 1,
-    minWidth: 0,
-    padding: "12px 14px",
+    width: "100%",
+    boxSizing: "border-box", // ✅ prevents “overflow/out of box” feel
+    padding: "10px 12px", // smaller inputs
     borderRadius: 14,
     border: "1px solid rgba(255,255,255,.10)",
-    background: "rgba(0,0,0,.25)",
+    background: "rgba(0,0,0,.22)",
     color: "#fff",
     outline: "none",
-    fontSize: 16,
+    fontSize: 14,
   },
-  searchBtn: {
-    padding: "12px 18px",
-    borderRadius: 14,
-    border: "1px solid rgba(255,255,255,.12)",
-    background:
-      "linear-gradient(135deg, rgba(108,99,255,1), rgba(168,94,255,1))",
-    color: "#fff",
-    fontWeight: 700,
-    cursor: "pointer",
-    whiteSpace: "nowrap",
-  },
-  searchBtnDisabled: { opacity: 0.6, cursor: "not-allowed" },
-  ghostBtn: {
-    padding: "10px 14px",
-    borderRadius: 14,
-    background: "rgba(255,255,255,.06)",
-    border: "1px solid rgba(255,255,255,.10)",
-    color: "#fff",
-    cursor: "pointer",
-    opacity: 0.9,
-  },
-  error: { marginTop: 14, textAlign: "center", color: "#ff9aa2" },
 
-  mostTracked: { marginTop: 28 },
-  sectionHead: {
-    display: "flex",
-    alignItems: "baseline",
-    justifyContent: "space-between",
-    gap: 12,
-    marginBottom: 14,
-  },
-  h2: { margin: 0, fontSize: 18, letterSpacing: -0.2 },
-  muted: { fontSize: 12, opacity: 0.7 },
-
-  cardGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
-    gap: 14,
-  },
-  card: {
-    borderRadius: 18,
-    overflow: "hidden",
-    background: "rgba(255,255,255,.06)",
-    border: "1px solid rgba(255,255,255,.10)",
-    boxShadow: "0 18px 50px rgba(0,0,0,.25)",
-  },
-  cardCover: {
-    height: 170,
-    backgroundSize: "cover",
-    backgroundPosition: "center",
-  },
-  cardBody: { padding: 12 },
-  cardTitle: { fontWeight: 800, fontSize: 14, lineHeight: 1.2 },
-  cardSub: { marginTop: 6, fontSize: 12, opacity: 0.7 },
-  cardBtn: {
-    marginTop: 12,
-    width: "100%",
+  error: {
+    color: "#ff9aa2",
+    fontSize: 13,
+    lineHeight: 1.3,
     padding: "10px 12px",
     borderRadius: 12,
-    border: "1px solid rgba(255,255,255,.12)",
-    background: "rgba(108,99,255,.22)",
-    color: "#fff",
-    fontWeight: 700,
-    cursor: "pointer",
+    background: "rgba(255, 100, 120, .10)",
+    border: "1px solid rgba(255, 100, 120, .18)",
   },
 
-  main: { padding: "12px 16px 64px" },
-  resultsWrap: { maxWidth: 1100, margin: "0 auto", paddingTop: 12 },
-  resultsGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-    gap: 16,
-  },
-  resultCard: {
-    borderRadius: 18,
-    overflow: "hidden",
-    background: "rgba(255,255,255,.06)",
-    border: "1px solid rgba(255,255,255,.10)",
-    boxShadow: "0 18px 60px rgba(0,0,0,.30)",
-    display: "grid",
-    gridTemplateColumns: "120px 1fr",
-    minHeight: 170,
-  },
-  resultCover: {
-    backgroundColor: "rgba(255,255,255,.06)",
-    backgroundSize: "cover",
-    backgroundPosition: "center",
-  },
-  resultBody: { padding: 14, display: "flex", flexDirection: "column", gap: 8 },
-  resultTitle: { fontWeight: 900, letterSpacing: -0.2 },
-  resultMeta: { fontSize: 12, opacity: 0.75 },
-  resultStats: { display: "flex", gap: 12, fontSize: 12, opacity: 0.75 },
-
-  resultActions: { marginTop: "auto", display: "flex" },
   primaryBtn: {
     width: "100%",
-    padding: "10px 12px",
-    borderRadius: 12,
+    padding: "11px 14px", // tighter
+    borderRadius: 14,
     border: "1px solid rgba(255,255,255,.12)",
     background:
       "linear-gradient(135deg, rgba(108,99,255,1), rgba(168,94,255,1))",
     color: "#fff",
-    fontWeight: 800,
+    fontWeight: 900,
     cursor: "pointer",
-  },
-  primaryBtnTracked: {
-    background: "rgba(255,255,255,.10)",
   },
   primaryBtnDisabled: {
     opacity: 0.75,
     cursor: "not-allowed",
   },
 
-  empty: { marginTop: 16, opacity: 0.7, textAlign: "center" },
+  hint: {
+    textAlign: "center",
+    fontSize: 12,
+    opacity: 0.65,
+    marginTop: 2,
+  },
+  kbd: {
+    display: "inline-block",
+    padding: "2px 6px",
+    borderRadius: 8,
+    border: "1px solid rgba(255,255,255,.12)",
+    background: "rgba(255,255,255,.08)",
+    fontSize: 11,
+    margin: "0 2px",
+  },
 };
+
+function tabStyle(active: boolean): React.CSSProperties {
+  return {
+    flex: 1,
+    padding: "9px 12px",
+    borderRadius: 12,
+    border: "1px solid rgba(255,255,255,.10)",
+    background: active ? "rgba(108,99,255,.28)" : "rgba(255,255,255,.06)",
+    color: "#fff",
+    fontWeight: 850 as any,
+    cursor: "pointer",
+    opacity: active ? 1 : 0.8,
+  };
+}
