@@ -179,9 +179,15 @@ export default function Home({ onLogout }: HomeProps) {
       <header style={styles.topBar}>
         <div style={styles.brand}>AnimeHub</div>
         <div style={styles.topBarRight}>
-          <span style={styles.pill}>Dashboard</span>
-          <span style={styles.pill}>Forums</span>
-          <span style={styles.pill}>Schedule</span>
+          <button style={styles.pillBtn} onClick={() => navigate("/dashboard")}>
+            Dashboard
+          </button>
+          <button style={styles.pillBtn} disabled title="Coming soon">
+            Forums
+          </button>
+          <button style={styles.pillBtn} disabled title="Coming soon">
+            Schedule
+          </button>
 
           <button
             onClick={onLogout}
@@ -417,7 +423,16 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1px solid rgba(255,255,255,.08)",
     opacity: 0.85,
   },
-
+  pillBtn: {
+    fontSize: 12,
+    padding: "8px 10px",
+    borderRadius: 999,
+    background: "rgba(255,255,255,.06)",
+    border: "1px solid rgba(255,255,255,.08)",
+    opacity: 0.9,
+    color: "#fff",
+    cursor: "pointer",
+  },
   hero: {
     width: "100%",
     transition: "padding 450ms ease, transform 450ms ease",

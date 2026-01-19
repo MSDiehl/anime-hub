@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import Home from "./Home";
 import AnimeDetails from "./pages/AnimeDetails";
+import Dashboard from "./pages/Dashboard";
 
 type Me = { id?: string; email?: string };
 
@@ -23,6 +24,14 @@ export default function App() {
     }
   }
 
+  async function logout() {
+    await fetch("/api/auth/logout", {
+      method: "POST",
+      credentials: "include",
+    });
+    await refreshMe();
+  }
+
   useEffect(() => {
     refreshMe();
   }, []);
@@ -32,40 +41,28 @@ export default function App() {
 
   return (
     <Routes>
-      <Route
-        path="/"
-        element={
-          <Home
-            onLogout={async () => {
-              await fetch("/api/auth/logout", {
-                method: "POST",
-                credentials: "include",
-              });
-              await refreshMe();
-            }}
-          />
-        }
-      />
+      {/* ✅ When logged in, going to "/" sends you to dashboard */}
+      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+
+      <Route path="/dashboard" element={<Dashboard onLogout={logout} />} />
+
+      {/* Keep search page accessible */}
+      <Route path="/search" element={<Home onLogout={logout} />} />
 
       <Route
         path="/anime/:aniListId"
-        element={
-          <AnimeDetails
-            onLogout={async () => {
-              await fetch("/api/auth/logout", {
-                method: "POST",
-                credentials: "include",
-              });
-              await refreshMe();
-            }}
-          />
-        }
+        element={<AnimeDetails onLogout={logout} />}
       />
 
-      <Route path="*" element={<Navigate to="/" replace />} />
+      {/* Fallback */}
+      <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   );
 }
+
+/* ---------------------------
+   Auth page (UNCHANGED)
+---------------------------- */
 
 function AuthPage({ onAuthed }: { onAuthed: () => Promise<void> | void }) {
   const [mode, setMode] = useState<"login" | "register">("login");
@@ -147,7 +144,7 @@ function AuthPage({ onAuthed }: { onAuthed: () => Promise<void> | void }) {
               <input
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="e.g. Malachi"
+                placeholder="e.g. CoolKid41234"
                 style={authStyles.input}
                 autoComplete="nickname"
               />
@@ -213,7 +210,7 @@ const authStyles: Record<string, React.CSSProperties> = {
   page: {
     minHeight: "100vh",
     width: "100%",
-    overflow: "hidden", // ✅ kills the unnecessary scrollbar
+    overflow: "hidden",
     display: "grid",
     placeItems: "center",
     position: "relative",
@@ -236,7 +233,7 @@ const authStyles: Record<string, React.CSSProperties> = {
     width: "100%",
     maxWidth: 420,
     borderRadius: 18,
-    padding: 16, // tighter than before
+    padding: 16,
     background: "rgba(255,255,255,.06)",
     border: "1px solid rgba(255,255,255,.10)",
     boxShadow: "0 18px 70px rgba(0,0,0,.35)",
@@ -255,7 +252,7 @@ const authStyles: Record<string, React.CSSProperties> = {
   },
   title: {
     margin: 0,
-    fontSize: 26, // slightly smaller = less whitespace
+    fontSize: 26,
     fontWeight: 950 as any,
     letterSpacing: -0.3,
   },
@@ -274,7 +271,7 @@ const authStyles: Record<string, React.CSSProperties> = {
   form: {
     marginTop: 12,
     display: "grid",
-    gap: 10, // tighter vertical spacing
+    gap: 10,
   },
 
   field: {
@@ -288,8 +285,8 @@ const authStyles: Record<string, React.CSSProperties> = {
 
   input: {
     width: "100%",
-    boxSizing: "border-box", // ✅ prevents “overflow/out of box” feel
-    padding: "10px 12px", // smaller inputs
+    boxSizing: "border-box",
+    padding: "10px 12px",
     borderRadius: 14,
     border: "1px solid rgba(255,255,255,.10)",
     background: "rgba(0,0,0,.22)",
@@ -310,7 +307,7 @@ const authStyles: Record<string, React.CSSProperties> = {
 
   primaryBtn: {
     width: "100%",
-    padding: "11px 14px", // tighter
+    padding: "11px 14px",
     borderRadius: 14,
     border: "1px solid rgba(255,255,255,.12)",
     background:
