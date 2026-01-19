@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
 import Home from "./Home";
+import AnimeDetails from "./pages/AnimeDetails";
 
 type Me = { id?: string; email?: string };
 
@@ -29,15 +31,39 @@ export default function App() {
   if (!me) return <AuthPage onAuthed={refreshMe} />;
 
   return (
-    <Home
-      onLogout={async () => {
-        await fetch("/api/auth/logout", {
-          method: "POST",
-          credentials: "include",
-        });
-        await refreshMe();
-      }}
-    />
+    <Routes>
+      <Route
+        path="/"
+        element={
+          <Home
+            onLogout={async () => {
+              await fetch("/api/auth/logout", {
+                method: "POST",
+                credentials: "include",
+              });
+              await refreshMe();
+            }}
+          />
+        }
+      />
+
+      <Route
+        path="/anime/:aniListId"
+        element={
+          <AnimeDetails
+            onLogout={async () => {
+              await fetch("/api/auth/logout", {
+                method: "POST",
+                credentials: "include",
+              });
+              await refreshMe();
+            }}
+          />
+        }
+      />
+
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
 

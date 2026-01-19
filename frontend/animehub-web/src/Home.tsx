@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 type HomeProps = {
   onLogout: () => void | Promise<void>;
@@ -72,6 +73,7 @@ export default function Home({ onLogout }: HomeProps) {
   const [items, setItems] = useState<AnimeSearchItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+  const navigate = useNavigate();
 
   // tracked
   const [tracked, setTracked] = useState<TrackedShow[]>([]);
@@ -302,7 +304,16 @@ export default function Home({ onLogout }: HomeProps) {
                 const isTracking = trackingIds.has(x.aniListId);
 
                 return (
-                  <div key={x.aniListId} style={styles.resultCard}>
+                  <div
+                    key={x.aniListId}
+                    style={styles.resultCard}
+                    onClick={() => navigate(`/anime/${x.aniListId}`)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) =>
+                      e.key === "Enter" && navigate(`/anime/${x.aniListId}`)
+                    }
+                  >
                     <div
                       style={{
                         ...styles.resultCover,
@@ -334,7 +345,10 @@ export default function Home({ onLogout }: HomeProps) {
                             ...(isTracked ? styles.primaryBtnTracked : null),
                             ...(isTracking ? styles.primaryBtnDisabled : null),
                           }}
-                          onClick={() => trackShow(x)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            trackShow(x);
+                          }}
                           disabled={isTracked || isTracking}
                           title={
                             isTracked ? "Already tracked" : "Track this show"
@@ -525,6 +539,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: "grid",
     gridTemplateColumns: "120px 1fr",
     minHeight: 170,
+    cursor: "pointer",
+    transition: "transform 120ms ease, border-color 120ms ease",
   },
   resultCover: {
     backgroundColor: "rgba(255,255,255,.06)",
