@@ -1,0 +1,602 @@
+/* ============================
+   Manga / Comic Home Page
+   Pure CSS, no external libs
+   ============================ */
+
+.homePage {
+  min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
+
+  /* Theme variables */
+  --ink: #111;
+  --paper: #fbf7ef;
+  --paper2: #f4efe6;
+  --panel: #ffffff;
+  --accent: #ff3b30;
+  --accent2: #ffd000;
+  --purple: #7b5cff;
+  --shadowInk: rgba(0, 0, 0, 0.40);
+  --comicFont: ui-rounded, "Comic Sans MS", "Trebuchet MS", system-ui,
+    -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+
+  color: #fff;
+  font-family: var(--comicFont);
+
+  background:
+    radial-gradient(1200px 600px at 20% 0%, rgba(123, 92, 255, 0.24), transparent 60%),
+    radial-gradient(900px 520px at 90% 18%, rgba(255, 208, 0, 0.12), transparent 62%),
+    linear-gradient(180deg, #0b0b12, #07070b);
+}
+
+/* --- Background layers --- */
+
+.homeBg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.homeInkWash {
+  position: absolute;
+  inset: -22%;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.08), transparent 55%),
+    radial-gradient(circle at 80% 30%, rgba(255, 255, 255, 0.06), transparent 58%),
+    radial-gradient(circle at 55% 85%, rgba(255, 255, 255, 0.05), transparent 60%);
+  filter: blur(16px);
+  opacity: 0.9;
+  transform: rotate(-6deg);
+}
+
+.homeSpeedLines {
+  position: absolute;
+  inset: 0;
+  opacity: 0.18;
+  background:
+    repeating-linear-gradient(
+      115deg,
+      rgba(255, 255, 255, 0.20) 0px,
+      rgba(255, 255, 255, 0.20) 2px,
+      transparent 2px,
+      transparent 18px
+    );
+  mask-image: radial-gradient(circle at 50% 20%, black 0 55%, transparent 78%);
+  animation: homeSpeedDrift 7s linear infinite;
+}
+
+.homeHalftone {
+  position: absolute;
+  inset: 0;
+  opacity: 0.14;
+  background-image:
+    radial-gradient(circle at 20% 28%, rgba(255, 255, 255, 0.25) 0 1px, transparent 2px),
+    radial-gradient(circle at 82% 22%, rgba(255, 255, 255, 0.25) 0 1px, transparent 2px),
+    radial-gradient(circle at 34% 78%, rgba(255, 255, 255, 0.22) 0 1px, transparent 2px),
+    radial-gradient(circle at 74% 82%, rgba(255, 255, 255, 0.22) 0 1px, transparent 2px);
+  background-size: 18px 18px;
+  filter: contrast(110%);
+  animation: homeDotsFloat 8s ease-in-out infinite;
+}
+
+@keyframes homeSpeedDrift {
+  0% { transform: translateX(-2%) translateY(-1%); }
+  100% { transform: translateX(2%) translateY(1%); }
+}
+
+@keyframes homeDotsFloat {
+  0%, 100% { transform: translateY(0px); opacity: 0.12; }
+  50% { transform: translateY(-10px); opacity: 0.18; }
+}
+
+/* --- Top bar --- */
+
+.homeTopBar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+
+  background: rgba(10, 10, 14, 0.62);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+.homeBrand {
+  font-weight: 1000;
+  letter-spacing: -0.3px;
+  font-size: 18px;
+  padding: 8px 12px;
+  border-radius: 999px;
+
+  background: rgba(255, 255, 255, 0.08);
+  border: 3px solid rgba(255, 255, 255, 0.10);
+  box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.35);
+}
+
+.homeTopBarRight {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.homePillBtn,
+.homeLogoutBtn {
+  font-size: 12px;
+  padding: 9px 12px;
+  border-radius: 999px;
+  color: #fff;
+  cursor: pointer;
+
+  background: rgba(255, 255, 255, 0.08);
+  border: 3px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 5px 5px 0 rgba(0, 0, 0, 0.35);
+  font-weight: 950;
+
+  transition: transform 120ms ease, filter 140ms ease, opacity 140ms ease;
+}
+
+.homePillBtn:hover,
+.homeLogoutBtn:hover {
+  transform: translateY(-2px);
+  filter: saturate(1.05);
+}
+
+.homePillBtn:active,
+.homeLogoutBtn:active {
+  transform: translateY(1px);
+}
+
+.homePillBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.homeLogoutBtn {
+  margin-left: 6px;
+  background: linear-gradient(135deg, rgba(255, 59, 48, 0.70), rgba(255, 208, 0, 0.55));
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+/* --- Hero --- */
+
+.homeHero {
+  width: 100%;
+  transition: padding 420ms ease;
+}
+
+.homeHero.centered {
+  padding: 80px 16px 28px;
+}
+
+.homeHero.compact {
+  padding: 28px 16px 12px;
+}
+
+.homeHeroInner {
+  max-width: 980px;
+  margin: 0 auto;
+}
+
+.homeHeroText {
+  text-align: center;
+}
+
+.homeH1 {
+  margin: 0;
+  font-size: 44px;
+  line-height: 1.05;
+  letter-spacing: -0.8px;
+  font-weight: 1000;
+  text-shadow: 2px 2px 0 rgba(0,0,0,0.35);
+}
+
+.homeSub {
+  margin-top: 10px;
+  margin-bottom: 0;
+  opacity: 0.84;
+  font-size: 16px;
+}
+
+/* --- Search row: inked panel --- */
+
+.homeSearchRow {
+  margin-top: 22px;
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  align-items: center;
+}
+
+.homeSearchBox {
+  width: 100%;
+  max-width: 760px;
+  display: grid;
+  grid-template-columns: 42px 1fr auto;
+  gap: 10px;
+  padding: 10px 10px;
+
+  border-radius: 18px;
+  background: linear-gradient(180deg, var(--paper), var(--paper2));
+  border: 4px solid var(--ink);
+  box-shadow: 10px 12px 0 var(--ink), 0 20px 60px rgba(0,0,0,0.35);
+}
+
+.homeSearchIcon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: #fff;
+  border: 3px solid var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+  color: var(--ink);
+}
+
+.homeInput {
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 3px solid var(--ink);
+  background: #fff;
+  color: var(--ink);
+  outline: none;
+  font-size: 16px;
+  font-weight: 800;
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.homeInput::placeholder {
+  color: rgba(0, 0, 0, 0.45);
+  font-weight: 700;
+}
+
+.homeInput:focus-visible {
+  outline: 4px solid rgba(255, 208, 0, 0.55);
+  outline-offset: 2px;
+}
+
+.homeSearchBtn {
+  padding: 12px 18px;
+  border-radius: 14px;
+  border: 4px solid var(--ink);
+  background: linear-gradient(135deg, var(--accent2), #ff6a5e);
+  color: var(--ink);
+  font-weight: 1000;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 8px 8px 0 var(--ink);
+  transition: transform 120ms ease, filter 140ms ease, opacity 140ms ease;
+}
+
+.homeSearchBtn:hover {
+  transform: translateY(-2px);
+  filter: saturate(1.08) contrast(1.05);
+}
+
+.homeSearchBtn:active {
+  transform: translateY(2px);
+  box-shadow: 6px 6px 0 var(--ink);
+}
+
+.homeSearchBtn.isDisabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.homeClearBtn {
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.10);
+  border: 3px solid rgba(255,255,255,0.14);
+  color: #fff;
+  cursor: pointer;
+  font-weight: 950;
+  box-shadow: 6px 6px 0 rgba(0,0,0,0.35);
+}
+
+.homeClearBtn:hover {
+  transform: translateY(-2px);
+}
+
+.homeClearBtn:active {
+  transform: translateY(1px);
+}
+
+.homeError {
+  margin-top: 14px;
+  text-align: center;
+  color: #ffd6d6;
+  font-weight: 900;
+}
+
+/* --- Section header --- */
+
+.homeMostTracked {
+  margin-top: 28px;
+}
+
+.homeSectionHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.homeSectionTitleWrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.homeH2 {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: -0.2px;
+  font-weight: 1000;
+}
+
+.homeMuted {
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.homeSectionBadge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--accent2);
+  border: 3px solid var(--ink);
+  color: var(--ink);
+  font-weight: 1000;
+  box-shadow: 4px 4px 0 var(--ink);
+  transform: rotate(-3deg);
+}
+
+.homeSectionBadge.alt {
+  background: #ff6a5e;
+}
+
+/* --- Cards --- */
+
+.homeCardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+}
+
+.homeCard {
+  border-radius: 18px;
+  overflow: hidden;
+  background: linear-gradient(180deg, var(--paper), var(--paper2));
+  border: 4px solid var(--ink);
+  box-shadow: 10px 12px 0 var(--ink), 0 22px 60px rgba(0,0,0,0.30);
+}
+
+.homeCardCover {
+  height: 170px;
+  background-size: cover;
+  background-position: center;
+  border-bottom: 4px solid var(--ink);
+}
+
+.homeCardBody {
+  padding: 12px;
+  color: var(--ink);
+}
+
+.homeCardTitle {
+  font-weight: 1000;
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.homeCardSub {
+  margin-top: 6px;
+  font-size: 12px;
+  opacity: 0.78;
+  font-weight: 800;
+}
+
+.homeCardBtn {
+  margin-top: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 4px solid var(--ink);
+  background: #fff;
+  color: var(--ink);
+  font-weight: 1000;
+  cursor: pointer;
+  box-shadow: 7px 7px 0 var(--ink);
+  transition: transform 120ms ease;
+}
+
+.homeCardBtn:hover {
+  transform: translateY(-2px);
+}
+
+.homeCardBtn:active {
+  transform: translateY(2px);
+  box-shadow: 5px 5px 0 var(--ink);
+}
+
+/* --- Results --- */
+
+.homeMain {
+  padding: 12px 16px 64px;
+}
+
+.homeResultsWrap {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding-top: 12px;
+}
+
+.homeResultsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.homeResultCard {
+  border-radius: 18px;
+  overflow: hidden;
+  background: linear-gradient(180deg, var(--paper), var(--paper2));
+  border: 4px solid var(--ink);
+  box-shadow: 10px 12px 0 var(--ink), 0 26px 80px rgba(0,0,0,0.35);
+
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  min-height: 170px;
+  cursor: pointer;
+
+  transition: box-shadow 140ms ease, filter 140ms ease;
+  outline: none;
+}
+
+.homeResultCard:hover {
+  filter: saturate(1.02);
+  box-shadow: 12px 14px 0 var(--ink), 0 30px 90px rgba(0,0,0,0.40);
+}
+
+.homeResultCard:focus-visible {
+  outline: 4px solid rgba(255, 208, 0, 0.55);
+  outline-offset: 6px;
+}
+
+.homeResultCover {
+  background-color: rgba(0,0,0,0.06);
+  background-size: cover;
+  background-position: center;
+  border-right: 4px solid var(--ink);
+}
+
+.homeResultBody {
+  padding: 14px;
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.homeResultTitle {
+  font-weight: 1000;
+  letter-spacing: -0.2px;
+}
+
+.homeResultMeta {
+  font-size: 12px;
+  opacity: 0.78;
+  font-weight: 850;
+}
+
+.homeResultStats {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  opacity: 0.78;
+  font-weight: 850;
+  flex-wrap: wrap;
+}
+
+.homeResultActions {
+  margin-top: auto;
+  display: flex;
+}
+
+.homeTrackBtn {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 4px solid var(--ink);
+  background: linear-gradient(135deg, var(--accent2), #ff6a5e);
+  color: var(--ink);
+  font-weight: 1000;
+  cursor: pointer;
+  box-shadow: 8px 8px 0 var(--ink);
+  transition: transform 120ms ease, opacity 140ms ease, box-shadow 120ms ease;
+}
+
+.homeTrackBtn:hover {
+  transform: translateY(-2px);
+}
+
+.homeTrackBtn:active {
+  transform: translateY(2px);
+  box-shadow: 6px 6px 0 var(--ink);
+}
+
+.homeTrackBtn.isTracked {
+  background: #fff;
+}
+
+.homeTrackBtn.isBusy {
+  opacity: 0.80;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* --- Empty state --- */
+
+.homeEmpty {
+  margin-top: 16px;
+  opacity: 0.85;
+  text-align: center;
+  font-weight: 900;
+}
+
+/* --- Responsive --- */
+
+@media (max-width: 520px) {
+  .homeH1 {
+    font-size: 34px;
+  }
+
+  .homeSearchBox {
+    grid-template-columns: 42px 1fr;
+    grid-template-areas:
+      "icon input"
+      "btn btn";
+  }
+
+  .homeSearchIcon { grid-area: icon; }
+  .homeInput { grid-area: input; }
+  .homeSearchBtn { grid-area: btn; }
+
+  .homeSearchRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .homeClearBtn {
+    width: 100%;
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .homeSpeedLines,
+  .homeHalftone {
+    animation: none !important;
+  }
+  .homePillBtn,
+  .homeLogoutBtn,
+  .homeSearchBtn,
+  .homeClearBtn,
+  .homeCardBtn,
+  .homeTrackBtn {
+    transition: none !important;
+  }
+}

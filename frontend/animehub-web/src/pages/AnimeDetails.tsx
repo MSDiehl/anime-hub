@@ -9,6 +9,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
+import "./AnimeDetails.css";
 
 type RelatedSeason = {
   aniListId: number;
@@ -102,14 +103,29 @@ export default function AnimeDetails({ onLogout }: Props) {
 
   if (loading)
     return (
-      <div style={styles.page}>
-        <div style={styles.loadingCard}>Loading…</div>
+      <div className="adPage">
+        <div className="adBg" aria-hidden="true">
+          <div className="adSpeedLines" />
+          <div className="adHalftone" />
+          <div className="adInkWash" />
+        </div>
+        <div className="adLoadingWrap">
+          <div className="adLoadingCard mangaPanel">Loading…</div>
+        </div>
       </div>
     );
+
   if (!data)
     return (
-      <div style={styles.page}>
-        <div style={styles.loadingCard}>Not found.</div>
+      <div className="adPage">
+        <div className="adBg" aria-hidden="true">
+          <div className="adSpeedLines" />
+          <div className="adHalftone" />
+          <div className="adInkWash" />
+        </div>
+        <div className="adLoadingWrap">
+          <div className="adLoadingCard mangaPanel">Not found.</div>
+        </div>
       </div>
     );
 
@@ -118,72 +134,83 @@ export default function AnimeDetails({ onLogout }: Props) {
     .sort((a, b) => (a.seasonYear ?? 9999) - (b.seasonYear ?? 9999));
 
   return (
-    <div style={styles.page}>
-      <header style={styles.topBar}>
-        <div style={styles.brand} onClick={() => nav("/")}>
+    <div className="adPage">
+      {/* Manga background layers (visual only) */}
+      <div className="adBg" aria-hidden="true">
+        <div className="adSpeedLines" />
+        <div className="adHalftone" />
+        <div className="adInkWash" />
+      </div>
+
+      <header className="adTopBar">
+        <div className="adBrand" onClick={() => nav("/")}>
           AnimeHub
         </div>
-        <div style={styles.topBarRight}>
-          <button style={styles.pillBtn} onClick={() => nav("/")}>
+        <div className="adTopBarRight">
+          <button className="adPillBtn" onClick={() => nav("/")}>
             Back
           </button>
-          <button style={styles.pillBtn} onClick={onLogout}>
+          <button className="adPillBtn" onClick={onLogout}>
             Logout
           </button>
         </div>
       </header>
 
-      <div style={styles.hero}>
+      <div className="adHero">
         <div
+          className="adBanner"
           style={{
-            ...styles.banner,
             backgroundImage: data.bannerImageUrl
               ? `url(${data.bannerImageUrl})`
               : undefined,
           }}
         />
-        <div style={styles.heroOverlay} />
-        <div style={styles.heroInner}>
+        <div className="adHeroOverlay" />
+        <div className="adHeroInner">
           <div
+            className="adCover"
             style={{
-              ...styles.cover,
               backgroundImage: data.coverImageUrl
                 ? `url(${data.coverImageUrl})`
                 : undefined,
             }}
           />
 
-          <div style={styles.heroText}>
-            <h1 style={styles.h1}>{data.title}</h1>
+          <div className="adHeroText mangaPanel">
+            <div className="adPanelTag" aria-hidden="true">
+              TITLE CARD
+            </div>
 
-            <div style={styles.metaRow}>
-              <span style={styles.chip}>{data.format ?? "—"}</span>
-              <span style={styles.chip}>{data.status ?? "—"}</span>
+            <h1 className="adH1">{data.title}</h1>
+
+            <div className="adMetaRow">
+              <span className="adChip">{data.format ?? "—"}</span>
+              <span className="adChip">{data.status ?? "—"}</span>
               {typeof data.episodes === "number" && (
-                <span style={styles.chip}>{data.episodes} eps</span>
+                <span className="adChip">{data.episodes} eps</span>
               )}
               {(data.season || data.seasonYear) && (
-                <span style={styles.chip}>
+                <span className="adChip">
                   {data.season ?? ""} {data.seasonYear ?? ""}
                 </span>
               )}
             </div>
 
-            <div style={styles.statRow}>
-              <div style={styles.stat}>
-                <div style={styles.statLabel}>Score</div>
-                <div style={styles.statValue}>{data.averageScore ?? "—"}</div>
+            <div className="adStatRow">
+              <div className="adStat">
+                <div className="adStatLabel">Score</div>
+                <div className="adStatValue">{data.averageScore ?? "—"}</div>
               </div>
-              <div style={styles.stat}>
-                <div style={styles.statLabel}>Popularity</div>
-                <div style={styles.statValue}>{data.popularity ?? "—"}</div>
+              <div className="adStat">
+                <div className="adStatLabel">Popularity</div>
+                <div className="adStatValue">{data.popularity ?? "—"}</div>
               </div>
             </div>
 
             {data.genres?.length ? (
-              <div style={styles.genreRow}>
+              <div className="adGenreRow">
                 {data.genres.slice(0, 8).map((g) => (
-                  <span key={g} style={styles.genre}>
+                  <span key={g} className="adGenre">
                     {g}
                   </span>
                 ))}
@@ -191,37 +218,38 @@ export default function AnimeDetails({ onLogout }: Props) {
             ) : null}
           </div>
 
-          <div style={styles.seasonPanel}>
-            <div style={styles.seasonPanelTitle}>Seasons</div>
+          <div className="adSeasonPanel mangaPanel">
+            <div className="adPanelTag" aria-hidden="true">
+              SEASONS
+            </div>
+
             {seasons.length === 0 ? (
-              <div style={styles.seasonEmpty}>
-                No related seasons found yet.
-              </div>
+              <div className="adSeasonEmpty">No related seasons found yet.</div>
             ) : (
-              <div style={styles.seasonList}>
+              <div className="adSeasonList">
                 {seasons.map((s) => {
                   const active = s.aniListId === data.aniListId;
                   return (
                     <button
                       key={s.aniListId}
                       onClick={() => setActiveId(s.aniListId)}
-                      style={{
-                        ...styles.seasonItem,
-                        ...(active ? styles.seasonItemActive : null),
-                      }}
+                      className={[
+                        "adSeasonItem",
+                        active ? "isActive" : "",
+                      ].join(" ")}
                       title={s.title}
                     >
                       <div
+                        className="adSeasonThumb"
                         style={{
-                          ...styles.seasonThumb,
                           backgroundImage: s.coverImageUrl
                             ? `url(${s.coverImageUrl})`
                             : undefined,
                         }}
                       />
-                      <div style={styles.seasonText}>
-                        <div style={styles.seasonName}>{s.title}</div>
-                        <div style={styles.seasonMeta}>
+                      <div className="adSeasonText">
+                        <div className="adSeasonName">{s.title}</div>
+                        <div className="adSeasonMeta">
                           {s.season || s.seasonYear
                             ? `${s.season ?? ""} ${s.seasonYear ?? ""}`.trim()
                             : (s.relationType ?? "Season")}
@@ -236,22 +264,28 @@ export default function AnimeDetails({ onLogout }: Props) {
         </div>
       </div>
 
-      <main style={styles.main}>
-        <div style={styles.grid}>
-          <section style={styles.panel}>
-            <h2 style={styles.h2}>Overview</h2>
+      <main className="adMain">
+        {/* Manga page layout: panels with gutters */}
+        <div className="adGrid">
+          <section className="adPanel mangaPanel">
+            <div className="adPanelTag" aria-hidden="true">
+              Overview
+            </div>
+
             <div
-              style={styles.desc}
+              className="adDesc"
               dangerouslySetInnerHTML={{ __html: data.description ?? "" }}
             />
           </section>
 
-          <section style={styles.panel}>
-            <h2 style={styles.h2}>Trends</h2>
+          <section className="adPanel mangaPanel">
+            <div className="adPanelTag" aria-hidden="true">
+              Trends
+            </div>
 
-            <div style={styles.chartBlock}>
-              <div style={styles.chartLabel}>Score (placeholder)</div>
-              <div style={{ height: 200 }}>
+            <div className="adChartBlock">
+              <div className="adChartLabel">Score (placeholder)</div>
+              <div className="adChartWrap">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={chartData}>
                     <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
@@ -269,9 +303,9 @@ export default function AnimeDetails({ onLogout }: Props) {
               </div>
             </div>
 
-            <div style={styles.chartBlock}>
-              <div style={styles.chartLabel}>Popularity (placeholder)</div>
-              <div style={{ height: 200 }}>
+            <div className="adChartBlock">
+              <div className="adChartLabel">Popularity (placeholder)</div>
+              <div className="adChartWrap">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={chartData}>
                     <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
@@ -289,16 +323,17 @@ export default function AnimeDetails({ onLogout }: Props) {
               </div>
             </div>
 
-            <div style={styles.note}>
-              Next: store real snapshots + per-episode ratings.
-            </div>
+            {/* Next: store real snapshots + per-episode ratings. */}
           </section>
         </div>
 
-        <section style={{ ...styles.panel, marginTop: 16 }}>
-          <div style={styles.episodesHeader}>
-            <h2 style={{ ...styles.h2, marginBottom: 0 }}>Episodes</h2>
-            <div style={styles.episodesMeta}>
+        <section className="adPanel adEpisodesPanel mangaPanel">
+          <div className="adPanelTag" aria-hidden="true">
+            Episodes
+          </div>
+
+          <div className="adEpisodesHeader">
+            <div className="adEpisodesMeta">
               {episodes.length
                 ? `${episodes.length} episodes`
                 : "No episode count"}
@@ -306,20 +341,20 @@ export default function AnimeDetails({ onLogout }: Props) {
           </div>
 
           {!episodes.length ? (
-            <div style={styles.note}>
+            <div className="adNote">
               AniList didn’t return an episode count for this show yet — we’ll
               still support community episode lists later.
             </div>
           ) : (
-            <div style={styles.episodeGrid}>
+            <div className="adEpisodeGrid">
               {episodes.map((ep) => (
-                <div key={ep.num} style={styles.epCard}>
-                  <div style={styles.epNum}>EP {ep.num}</div>
-                  <div style={styles.epBadges}>
-                    {ep.isFiller && <span style={styles.badge}>Filler</span>}
-                    {ep.arc && <span style={styles.badge}>{ep.arc}</span>}
+                <div key={ep.num} className="adEpCard">
+                  <div className="adEpNum">EP {ep.num}</div>
+                  <div className="adEpBadges">
+                    {ep.isFiller && <span className="adBadge">Filler</span>}
+                    {ep.arc && <span className="adBadge">{ep.arc}</span>}
                   </div>
-                  <button style={styles.rateBtn} disabled title="Next step">
+                  <button className="adRateBtn" disabled title="Next step">
                     Rate (coming next)
                   </button>
                 </div>
@@ -331,246 +366,3 @@ export default function AnimeDetails({ onLogout }: Props) {
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  page: {
-    minHeight: "100vh",
-    background:
-      "radial-gradient(1200px 600px at 20% 0%, rgba(108,99,255,.20), transparent 60%), #0b0b10",
-    color: "#fff",
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-  },
-
-  topBar: {
-    position: "sticky",
-    top: 0,
-    zIndex: 10,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "14px 18px",
-    backdropFilter: "blur(10px)",
-    background: "rgba(11,11,16,.55)",
-    borderBottom: "1px solid rgba(255,255,255,.06)",
-  },
-  brand: {
-    fontWeight: 900,
-    letterSpacing: 0.2,
-    fontSize: 18,
-    cursor: "pointer",
-  },
-  topBarRight: { display: "flex", gap: 10 },
-  pillBtn: {
-    fontSize: 12,
-    padding: "8px 12px",
-    borderRadius: 999,
-    background: "rgba(255,255,255,.06)",
-    border: "1px solid rgba(255,255,255,.10)",
-    color: "#fff",
-    cursor: "pointer",
-  },
-
-  hero: { position: "relative" },
-  banner: {
-    height: 260,
-    background:
-      "radial-gradient(700px 300px at 70% 25%, rgba(140,80,255,.22), transparent 60%)",
-    backgroundSize: "cover",
-    backgroundPosition: "center",
-    borderBottom: "1px solid rgba(255,255,255,.06)",
-  },
-  heroOverlay: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    top: 0,
-    height: 260,
-    background:
-      "linear-gradient(to bottom, rgba(11,11,16,.15), rgba(11,11,16,.80) 75%, rgba(11,11,16,1))",
-  },
-
-  heroInner: {
-    maxWidth: 1200,
-    margin: "-86px auto 0",
-    padding: "0 16px 16px",
-    display: "grid",
-    gridTemplateColumns: "160px 1fr 320px",
-    gap: 16,
-    alignItems: "end",
-    position: "relative",
-    zIndex: 2,
-  },
-  cover: {
-    width: 160,
-    height: 230,
-    borderRadius: 18,
-    background: "rgba(255,255,255,.06)",
-    border: "1px solid rgba(255,255,255,.10)",
-    backgroundSize: "cover",
-    backgroundPosition: "center",
-    boxShadow: "0 18px 70px rgba(0,0,0,.35)",
-  },
-  heroText: {
-    padding: 16,
-    borderRadius: 18,
-    background: "rgba(255,255,255,.06)",
-    border: "1px solid rgba(255,255,255,.10)",
-    backdropFilter: "blur(10px)",
-    minHeight: 230,
-  },
-  h1: { margin: 0, fontSize: 34, letterSpacing: -0.6, lineHeight: 1.05 },
-
-  metaRow: { marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" },
-  chip: {
-    fontSize: 12,
-    padding: "6px 10px",
-    borderRadius: 999,
-    border: "1px solid rgba(255,255,255,.10)",
-    background: "rgba(0,0,0,.20)",
-    opacity: 0.95,
-  },
-
-  statRow: { marginTop: 14, display: "flex", gap: 14, flexWrap: "wrap" },
-  stat: {
-    padding: "10px 12px",
-    borderRadius: 14,
-    background: "rgba(0,0,0,.20)",
-    border: "1px solid rgba(255,255,255,.08)",
-    minWidth: 120,
-  },
-  statLabel: { fontSize: 11, opacity: 0.7 },
-  statValue: { fontSize: 18, fontWeight: 900, marginTop: 2 },
-
-  genreRow: { marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" },
-  genre: {
-    fontSize: 12,
-    padding: "6px 10px",
-    borderRadius: 999,
-    background: "rgba(108,99,255,.18)",
-    border: "1px solid rgba(108,99,255,.22)",
-  },
-
-  seasonPanel: {
-    padding: 14,
-    borderRadius: 18,
-    background: "rgba(255,255,255,.06)",
-    border: "1px solid rgba(255,255,255,.10)",
-    backdropFilter: "blur(10px)",
-    minHeight: 230,
-  },
-  seasonPanelTitle: { fontSize: 12, opacity: 0.75, marginBottom: 10 },
-  seasonEmpty: { fontSize: 12, opacity: 0.6 },
-  seasonList: { display: "grid", gap: 10 },
-
-  seasonItem: {
-    display: "grid",
-    gridTemplateColumns: "46px 1fr",
-    gap: 10,
-    alignItems: "center",
-    padding: 10,
-    borderRadius: 14,
-    border: "1px solid rgba(255,255,255,.08)",
-    background: "rgba(0,0,0,.18)",
-    color: "#fff",
-    cursor: "pointer",
-    textAlign: "left",
-  },
-  seasonItemActive: {
-    border: "1px solid rgba(108,99,255,.35)",
-    background: "rgba(108,99,255,.14)",
-  },
-  seasonThumb: {
-    width: 46,
-    height: 46,
-    borderRadius: 12,
-    background: "rgba(255,255,255,.06)",
-    border: "1px solid rgba(255,255,255,.10)",
-    backgroundSize: "cover",
-    backgroundPosition: "center",
-  },
-  seasonText: { overflow: "hidden" },
-  seasonName: {
-    fontWeight: 850,
-    fontSize: 12,
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-  },
-  seasonMeta: { fontSize: 11, opacity: 0.7, marginTop: 2 },
-
-  main: { maxWidth: 1200, margin: "0 auto", padding: "12px 16px 60px" },
-  grid: { display: "grid", gridTemplateColumns: "1fr 420px", gap: 16 },
-
-  panel: {
-    borderRadius: 18,
-    padding: 16,
-    background: "rgba(255,255,255,.06)",
-    border: "1px solid rgba(255,255,255,.10)",
-    boxShadow: "0 18px 60px rgba(0,0,0,.25)",
-  },
-  h2: { margin: 0, fontSize: 16, letterSpacing: -0.2, marginBottom: 10 },
-  desc: { opacity: 0.85, fontSize: 14, lineHeight: 1.55 },
-  note: { marginTop: 10, fontSize: 12, opacity: 0.7 },
-
-  chartBlock: {
-    padding: 12,
-    borderRadius: 14,
-    background: "rgba(0,0,0,.18)",
-    border: "1px solid rgba(255,255,255,.08)",
-    marginTop: 10,
-  },
-  chartLabel: { fontSize: 12, opacity: 0.75, marginBottom: 6 },
-
-  episodesHeader: {
-    display: "flex",
-    alignItems: "baseline",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  episodesMeta: { fontSize: 12, opacity: 0.7 },
-
-  episodeGrid: {
-    marginTop: 12,
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
-    gap: 12,
-  },
-  epCard: {
-    padding: 12,
-    borderRadius: 16,
-    border: "1px solid rgba(255,255,255,.08)",
-    background: "rgba(0,0,0,.18)",
-    display: "grid",
-    gap: 8,
-  },
-  epNum: { fontWeight: 900, letterSpacing: 0.2 },
-  epBadges: { display: "flex", gap: 8, flexWrap: "wrap" },
-  badge: {
-    fontSize: 11,
-    padding: "4px 8px",
-    borderRadius: 999,
-    border: "1px solid rgba(255,255,255,.10)",
-    background: "rgba(255,255,255,.06)",
-    opacity: 0.9,
-  },
-  rateBtn: {
-    marginTop: 2,
-    padding: "9px 10px",
-    borderRadius: 12,
-    border: "1px solid rgba(255,255,255,.10)",
-    background: "rgba(108,99,255,.18)",
-    color: "#fff",
-    fontWeight: 850,
-    cursor: "not-allowed",
-    opacity: 0.85,
-  },
-
-  loadingCard: {
-    maxWidth: 520,
-    margin: "120px auto 0",
-    padding: 18,
-    borderRadius: 18,
-    background: "rgba(255,255,255,.06)",
-    border: "1px solid rgba(255,255,255,.10)",
-  },
-};
