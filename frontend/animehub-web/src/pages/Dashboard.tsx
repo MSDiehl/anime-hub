@@ -77,7 +77,7 @@ export default function Dashboard({ onLogout }: Props) {
           <button className="dashPillBtn" disabled title="Coming soon">
             Forums
           </button>
-          <button className="dashPillBtn" disabled title="Coming soon">
+          <button className="dashPillBtn" onClick={() => navigate("/schedule")}>
             Schedule
           </button>
 

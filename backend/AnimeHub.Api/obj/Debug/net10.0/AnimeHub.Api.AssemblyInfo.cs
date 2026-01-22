@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("AnimeHub.Api")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+60ba922405bc6ccaaacb1a4b2aaf1cf79fc0a728")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+df3f6522eb6931450bc2af09b33907eeab65c6b4")]
 [assembly: System.Reflection.AssemblyProductAttribute("AnimeHub.Api")]
 [assembly: System.Reflection.AssemblyTitleAttribute("AnimeHub.Api")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

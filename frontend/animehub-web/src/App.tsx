@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import Home from "./Home";
 import AnimeDetails from "./pages/AnimeDetails";
 import Dashboard from "./pages/Dashboard";
+import Schedule from "./pages/Schedule";
 import "./App.css";
 
 type Me = { id?: string; email?: string };
@@ -49,6 +50,8 @@ export default function App() {
 
       {/* Keep search page accessible */}
       <Route path="/search" element={<Home onLogout={logout} />} />
+
+      <Route path="/schedule" element={<Schedule onLogout={logout} />} />
 
       <Route
         path="/anime/:aniListId"

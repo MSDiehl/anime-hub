@@ -198,7 +198,7 @@ export default function Home({ onLogout }: HomeProps) {
           <button className="homePillBtn" disabled title="Coming soon">
             Forums
           </button>
-          <button className="homePillBtn" disabled title="Coming soon">
+          <button className="dashPillBtn" onClick={() => navigate("/schedule")}>
             Schedule
           </button>
 
