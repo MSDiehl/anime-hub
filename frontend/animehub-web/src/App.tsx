@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
+
 import Home from "./Home";
 import AnimeDetails from "./pages/AnimeDetails";
 import Dashboard from "./pages/Dashboard";
@@ -43,16 +44,24 @@ export default function App() {
 
   return (
     <Routes>
-      {/* ✅ When logged in, going to "/" sends you to dashboard */}
+      {/* When logged in, going to "/" sends you to dashboard */}
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
       <Route path="/dashboard" element={<Dashboard onLogout={logout} />} />
 
-      {/* Keep search page accessible */}
+      {/* Search page */}
       <Route path="/search" element={<Home onLogout={logout} />} />
 
+      {/* Schedule */}
       <Route path="/schedule" element={<Schedule onLogout={logout} />} />
 
+      {/* Forums (Coming soon for now) */}
+      <Route
+        path="/forums"
+        element={<ComingSoon title="Forums" onLogout={logout} />}
+      />
+
+      {/* Anime Details */}
       <Route
         path="/anime/:aniListId"
         element={<AnimeDetails onLogout={logout} />}
@@ -65,9 +74,129 @@ export default function App() {
 }
 
 /* ---------------------------
-   Auth page (FUNCTIONALITY UNCHANGED)
+   Coming Soon page (Forums)
 ---------------------------- */
+function ComingSoon({
+  title,
+  onLogout,
+}: {
+  title: string;
+  onLogout: () => Promise<void>;
+}) {
+  const navigate = useNavigate();
 
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        padding: 24,
+        color: "rgba(255,255,255,.92)",
+      }}
+    >
+      <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            marginBottom: 18,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div
+              style={{
+                fontWeight: 900,
+                letterSpacing: 0.5,
+                cursor: "pointer",
+              }}
+              onClick={() => navigate("/dashboard")}
+              title="Back to Dashboard"
+            >
+              AnimeHub
+            </div>
+
+            <span style={{ opacity: 0.6 }}>•</span>
+
+            <div style={{ fontWeight: 800 }}>{title}</div>
+          </div>
+
+          <div style={{ display: "flex", gap: 10 }}>
+            <button
+              onClick={() => navigate("/dashboard")}
+              style={ghostBtnStyle}
+              type="button"
+            >
+              Dashboard
+            </button>
+            <button onClick={onLogout} style={primaryBtnStyle} type="button">
+              Logout
+            </button>
+          </div>
+        </div>
+
+        <div
+          style={{
+            borderRadius: 18,
+            border: "1px solid rgba(255,255,255,.12)",
+            background: "rgba(255,255,255,.06)",
+            padding: 22,
+          }}
+        >
+          <div style={{ fontSize: 26, fontWeight: 900, marginBottom: 8 }}>
+            {title} — Coming soon
+          </div>
+
+          <div style={{ opacity: 0.75, lineHeight: 1.6, maxWidth: 720 }}>
+            We’re building anime + episode discussions directly inside the anime
+            detail pages first. After that, this page becomes the global feed.
+          </div>
+
+          <div style={{ marginTop: 18, display: "flex", gap: 10 }}>
+            <button
+              onClick={() => navigate("/search")}
+              style={primaryBtnStyle}
+              type="button"
+            >
+              Go to Search
+            </button>
+            <button
+              onClick={() => navigate("/dashboard")}
+              style={ghostBtnStyle}
+              type="button"
+            >
+              Back to Dashboard
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const primaryBtnStyle: React.CSSProperties = {
+  padding: "10px 14px",
+  borderRadius: 999,
+  border: "1px solid rgba(255,255,255,.18)",
+  background: "rgba(255,255,255,.12)",
+  color: "rgba(255,255,255,.92)",
+  cursor: "pointer",
+  fontWeight: 800,
+};
+
+const ghostBtnStyle: React.CSSProperties = {
+  padding: "10px 14px",
+  borderRadius: 999,
+  border: "1px solid rgba(255,255,255,.14)",
+  background: "transparent",
+  color: "rgba(255,255,255,.9)",
+  cursor: "pointer",
+  fontWeight: 800,
+};
+
+/* ---------------------------
+   Auth page (UNCHANGED)
+---------------------------- */
 function AuthPage({ onAuthed }: { onAuthed: () => Promise<void> | void }) {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
@@ -104,6 +233,7 @@ function AuthPage({ onAuthed }: { onAuthed: () => Promise<void> | void }) {
         }
         throw new Error(msg);
       }
+
       await onAuthed();
     } catch (e: any) {
       setError(e?.message ?? "Auth failed");

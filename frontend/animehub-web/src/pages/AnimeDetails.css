@@ -566,3 +566,407 @@
     transition: none !important;
   }
 }
+
+/* -----------------------------
+   Discussion panel
+------------------------------ */
+
+.adDiscussionPanel {
+  margin-top: 16px;
+}
+
+.adDiscussionTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.adDiscussionTitle {
+  font-weight: 1000;
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+.adDiscussionControls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.adScopeBtn {
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 3px solid var(--ink);
+  background: #fff;
+  box-shadow: 5px 5px 0 var(--ink);
+  font-weight: 1000;
+  cursor: pointer;
+  transition: transform 120ms ease;
+}
+.adScopeBtn:hover { transform: translateY(-2px); }
+.adScopeBtn:active { transform: translateY(1px); }
+.adScopeBtn.isActive {
+  background: linear-gradient(135deg, rgba(255,208,0,.7), rgba(255,106,94,.25));
+}
+
+.adScopeSep {
+  width: 10px;
+  height: 1px;
+  background: rgba(0,0,0,0.25);
+}
+
+.adScopeLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 1000;
+  font-size: 12px;
+}
+
+.adScopeSelect {
+  padding: 8px 10px;
+  border-radius: 14px;
+  border: 3px solid var(--ink);
+  background: #fff;
+  box-shadow: 5px 5px 0 var(--ink);
+  font-weight: 1000;
+  cursor: pointer;
+}
+
+.adDiscussionGrid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: 420px 1fr;
+  gap: 16px;
+}
+
+.adDiscussionLeft,
+.adDiscussionRight {
+  display: grid;
+  gap: 12px;
+}
+
+.adCreateThread {
+  padding: 12px;
+  border-radius: 18px;
+  border: 3px solid var(--ink);
+  background: #fff;
+  box-shadow: 8px 8px 0 var(--ink);
+  position: relative;
+}
+.adCreateThread::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: 12px;
+  border: 2px dashed rgba(0,0,0,0.14);
+  pointer-events: none;
+}
+
+.adCreateHeader {
+  font-weight: 1000;
+  margin-bottom: 8px;
+}
+
+.adCreateTitle,
+.adCreateBody {
+  width: 100%;
+  border-radius: 14px;
+  border: 3px solid var(--ink);
+  background: rgba(108,99,255,.08);
+  box-shadow: 5px 5px 0 var(--ink);
+  padding: 10px 12px;
+  font-weight: 900;
+  outline: none;
+}
+
+.adCreateTitle { margin-bottom: 10px; }
+.adCreateBody {
+  min-height: 110px;
+  resize: vertical;
+  margin-bottom: 10px;
+  line-height: 1.4;
+}
+
+.adCreateBtn {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 3px solid var(--ink);
+  background: rgba(255, 208, 0, 0.55);
+  box-shadow: 6px 6px 0 var(--ink);
+  font-weight: 1000;
+  cursor: pointer;
+  transition: transform 120ms ease;
+}
+.adCreateBtn:hover { transform: translateY(-2px); }
+.adCreateBtn:active { transform: translateY(1px); }
+.adCreateBtn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+.adInlineError {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 3px solid var(--ink);
+  background: rgba(255,59,48,.18);
+  box-shadow: 6px 6px 0 var(--ink);
+  font-weight: 900;
+}
+
+.adThreadList {
+  padding: 12px;
+  border-radius: 18px;
+  border: 3px solid var(--ink);
+  background: #fff;
+  box-shadow: 8px 8px 0 var(--ink);
+  position: relative;
+  max-height: 520px;
+  overflow: auto;
+}
+.adThreadList::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: 12px;
+  border: 2px dashed rgba(0,0,0,0.14);
+  pointer-events: none;
+}
+
+.adThreadListHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-weight: 1000;
+  margin-bottom: 10px;
+}
+
+.adThreadListMeta {
+  font-size: 12px;
+  opacity: 0.75;
+  font-weight: 900;
+}
+
+.adThreadItem {
+  width: 100%;
+  text-align: left;
+  padding: 10px 10px;
+  border-radius: 14px;
+  border: 3px solid var(--ink);
+  background: rgba(108,99,255,.07);
+  box-shadow: 6px 6px 0 var(--ink);
+  cursor: pointer;
+  margin-bottom: 10px;
+  transition: transform 120ms ease;
+}
+.adThreadItem:hover { transform: translateY(-2px); }
+.adThreadItem:active { transform: translateY(1px); }
+
+.adThreadItem.isActive {
+  background: linear-gradient(135deg, rgba(255,208,0,.55), rgba(255,106,94,.18));
+}
+
+.adThreadItemTitle {
+  font-weight: 1000;
+  line-height: 1.2;
+  margin-bottom: 6px;
+}
+
+.adThreadItemMeta {
+  font-size: 12px;
+  opacity: 0.78;
+  font-weight: 900;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.adThreadAuthor { font-weight: 1000; }
+.adThreadDot { opacity: 0.7; }
+
+.adThreadEmpty {
+  padding: 10px 10px;
+  border-radius: 14px;
+  border: 3px dashed rgba(0,0,0,0.25);
+  background: rgba(0,0,0,0.03);
+  font-weight: 900;
+  opacity: 0.8;
+}
+
+.adThreadPlaceholder {
+  padding: 16px;
+  border-radius: 18px;
+  border: 3px dashed rgba(0,0,0,0.25);
+  background: rgba(255,255,255,0.55);
+  box-shadow: 8px 8px 0 var(--ink);
+  font-weight: 1000;
+}
+
+.adThreadView {
+  padding: 12px;
+  border-radius: 18px;
+  border: 3px solid var(--ink);
+  background: #fff;
+  box-shadow: 8px 8px 0 var(--ink);
+  position: relative;
+}
+.adThreadView::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: 12px;
+  border: 2px dashed rgba(0,0,0,0.14);
+  pointer-events: none;
+}
+
+.adThreadHeader {
+  margin-bottom: 10px;
+}
+
+.adThreadTitle {
+  font-weight: 1000;
+  font-size: 16px;
+  margin-bottom: 6px;
+}
+
+.adThreadSub {
+  font-size: 12px;
+  opacity: 0.78;
+  font-weight: 900;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.adThreadBody {
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 3px solid var(--ink);
+  background: rgba(108,99,255,.06);
+  box-shadow: 6px 6px 0 var(--ink);
+  font-weight: 900;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.adRepliesHeader {
+  margin-top: 12px;
+  font-weight: 1000;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.adRepliesCount {
+  opacity: 0.75;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.adRepliesList {
+  margin-top: 10px;
+  display: grid;
+  gap: 10px;
+  max-height: 340px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.adReply {
+  padding: 10px 10px;
+  border-radius: 14px;
+  border: 3px solid var(--ink);
+  background: #fff;
+  box-shadow: 6px 6px 0 var(--ink);
+}
+
+.adReplyMeta {
+  font-size: 12px;
+  opacity: 0.8;
+  font-weight: 900;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.adReplyBody {
+  font-weight: 900;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.adReplyBox {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.adReplyInput {
+  width: 100%;
+  min-height: 90px;
+  resize: vertical;
+  border-radius: 14px;
+  border: 3px solid var(--ink);
+  background: rgba(255,208,0,.12);
+  box-shadow: 6px 6px 0 var(--ink);
+  padding: 10px 12px;
+  font-weight: 900;
+  outline: none;
+}
+
+.adReplyBtn {
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 3px solid var(--ink);
+  background: rgba(108,99,255,.18);
+  box-shadow: 6px 6px 0 var(--ink);
+  font-weight: 1000;
+  cursor: pointer;
+  transition: transform 120ms ease;
+}
+.adReplyBtn:hover { transform: translateY(-2px); }
+.adReplyBtn:active { transform: translateY(1px); }
+.adReplyBtn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+.adReplyHint {
+  font-size: 12px;
+  opacity: 0.75;
+  font-weight: 900;
+}
+
+.adKbd {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 8px;
+  border: 2px solid var(--ink);
+  background: #fff;
+  box-shadow: 3px 3px 0 var(--ink);
+  font-weight: 1000;
+}
+
+/* Episode “Discuss” button */
+.adDiscussBtn {
+  padding: 9px 10px;
+  border-radius: 14px;
+  border: 3px solid var(--ink);
+  background: rgba(108,99,255,.14);
+  color: var(--ink);
+  font-weight: 1000;
+  cursor: pointer;
+  box-shadow: 6px 6px 0 var(--ink);
+  transition: transform 120ms ease;
+}
+.adDiscussBtn:hover { transform: translateY(-2px); }
+.adDiscussBtn:active { transform: translateY(1px); }
+
+@media (max-width: 980px) {
+  .adDiscussionGrid {
+    grid-template-columns: 1fr;
+  }
+}
