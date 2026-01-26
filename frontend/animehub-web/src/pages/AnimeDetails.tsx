@@ -38,6 +38,35 @@ type AnimeDetailsDto = {
   relatedSeasons?: RelatedSeason[];
 };
 
+type ThreadSummary = {
+  id: string;
+  aniListId: number;
+  episodeNumber?: number | null;
+  title: string;
+  createdUtc: string;
+  authorDisplayName: string;
+  commentCount: number;
+};
+
+type CommentDto = {
+  id: string;
+  threadId: string;
+  body: string;
+  createdUtc: string;
+  authorDisplayName: string;
+};
+
+type ThreadDetail = {
+  id: string;
+  aniListId: number;
+  episodeNumber?: number | null;
+  title: string;
+  body: string;
+  createdUtc: string;
+  authorDisplayName: string;
+  comments: CommentDto[];
+};
+
 type Props = { onLogout: () => void | Promise<void> };
 
 export default function AnimeDetails({ onLogout }: Props) {
@@ -51,7 +80,35 @@ export default function AnimeDetails({ onLogout }: Props) {
   const [data, setData] = useState<AnimeDetailsDto | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // discussion state
+  const [discEpisode, setDiscEpisode] = useState<number | null>(null); // null = general
+  const [threads, setThreads] = useState<ThreadSummary[]>([]);
+  const [threadsLoading, setThreadsLoading] = useState(false);
+  const [threadsErr, setThreadsErr] = useState<string | null>(null);
+
+  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  const [threadLoading, setThreadLoading] = useState(false);
+  const [threadErr, setThreadErr] = useState<string | null>(null);
+  const [thread, setThread] = useState<ThreadDetail | null>(null);
+
+  const [newTitle, setNewTitle] = useState("");
+  const [newBody, setNewBody] = useState("");
+  const [postingThread, setPostingThread] = useState(false);
+
+  const [replyBody, setReplyBody] = useState("");
+  const [postingReply, setPostingReply] = useState(false);
+
   useEffect(() => setActiveId(routeId), [routeId]);
+
+  // reset discussion when anime switches
+  useEffect(() => {
+    setDiscEpisode(null);
+    setSelectedThreadId(null);
+    setThread(null);
+    setThreads([]);
+    setThreadsErr(null);
+    setThreadErr(null);
+  }, [activeId]);
 
   const chartData = useMemo(() => {
     if (!data) return [];
@@ -71,7 +128,6 @@ export default function AnimeDetails({ onLogout }: Props) {
     if (!n || n <= 0) return [];
     return Array.from({ length: n }).map((_, i) => ({
       num: i + 1,
-      // later: arc/season/filler/user rating/community avg
       arc: null as string | null,
       isFiller: false,
     }));
@@ -100,6 +156,121 @@ export default function AnimeDetails({ onLogout }: Props) {
       cancelled = true;
     };
   }, [activeId]);
+
+  async function loadThreads() {
+    setThreadsLoading(true);
+    setThreadsErr(null);
+    try {
+      const epQ = discEpisode ? `?episode=${discEpisode}` : "";
+      const res = await fetch(`/api/discussions/anime/${activeId}${epQ}`, {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        throw new Error(t || `${res.status} ${res.statusText}`);
+      }
+      const json = (await res.json()) as ThreadSummary[];
+      setThreads(json);
+    } catch (e: any) {
+      setThreadsErr(e?.message ?? "Failed to load discussions");
+      setThreads([]);
+    } finally {
+      setThreadsLoading(false);
+    }
+  }
+
+  async function loadThread(threadId: string) {
+    setThreadLoading(true);
+    setThreadErr(null);
+    setThread(null);
+    try {
+      const res = await fetch(`/api/discussions/thread/${threadId}`, {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        throw new Error(t || `${res.status} ${res.statusText}`);
+      }
+      const json = (await res.json()) as ThreadDetail;
+      setThread(json);
+    } catch (e: any) {
+      setThreadErr(e?.message ?? "Failed to load thread");
+    } finally {
+      setThreadLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!Number.isFinite(activeId) || activeId <= 0) return;
+    loadThreads();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId, discEpisode]);
+
+  useEffect(() => {
+    if (!selectedThreadId) return;
+    loadThread(selectedThreadId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedThreadId]);
+
+  async function createThread() {
+    if (!newTitle.trim() || !newBody.trim()) return;
+
+    setPostingThread(true);
+    setThreadsErr(null);
+    try {
+      const epQ = discEpisode ? `?episode=${discEpisode}` : "";
+      const res = await fetch(`/api/discussions/anime/${activeId}${epQ}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ title: newTitle, body: newBody }),
+      });
+
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        throw new Error(t || `${res.status} ${res.statusText}`);
+      }
+
+      setNewTitle("");
+      setNewBody("");
+      await loadThreads();
+    } catch (e: any) {
+      setThreadsErr(e?.message ?? "Failed to create thread");
+    } finally {
+      setPostingThread(false);
+    }
+  }
+
+  async function postReply() {
+    if (!selectedThreadId || !replyBody.trim()) return;
+
+    setPostingReply(true);
+    setThreadErr(null);
+    try {
+      const res = await fetch(
+        `/api/discussions/thread/${selectedThreadId}/comments`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ body: replyBody }),
+        },
+      );
+
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        throw new Error(t || `${res.status} ${res.statusText}`);
+      }
+
+      setReplyBody("");
+      await loadThread(selectedThreadId);
+      await loadThreads();
+    } catch (e: any) {
+      setThreadErr(e?.message ?? "Failed to post reply");
+    } finally {
+      setPostingReply(false);
+    }
+  }
 
   if (loading)
     return (
@@ -135,7 +306,6 @@ export default function AnimeDetails({ onLogout }: Props) {
 
   return (
     <div className="adPage">
-      {/* Manga background layers (visual only) */}
       <div className="adBg" aria-hidden="true">
         <div className="adSpeedLines" />
         <div className="adHalftone" />
@@ -265,7 +435,6 @@ export default function AnimeDetails({ onLogout }: Props) {
       </div>
 
       <main className="adMain">
-        {/* Manga page layout: panels with gutters */}
         <div className="adGrid">
           <section className="adPanel mangaPanel">
             <div className="adPanelTag" aria-hidden="true">
@@ -322,8 +491,6 @@ export default function AnimeDetails({ onLogout }: Props) {
                 </ResponsiveContainer>
               </div>
             </div>
-
-            {/* Next: store real snapshots + per-episode ratings. */}
           </section>
         </div>
 
@@ -338,6 +505,19 @@ export default function AnimeDetails({ onLogout }: Props) {
                 ? `${episodes.length} episodes`
                 : "No episode count"}
             </div>
+
+            {episodes.length > 0 && (
+              <button
+                className="adPillBtn"
+                onClick={() => {
+                  setDiscEpisode(null);
+                  const el = document.getElementById("discussion-panel");
+                  el?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+              >
+                Jump to Discussion
+              </button>
+            )}
           </div>
 
           {!episodes.length ? (
@@ -354,13 +534,265 @@ export default function AnimeDetails({ onLogout }: Props) {
                     {ep.isFiller && <span className="adBadge">Filler</span>}
                     {ep.arc && <span className="adBadge">{ep.arc}</span>}
                   </div>
-                  <button className="adRateBtn" disabled title="Next step">
-                    Rate (coming next)
+
+                  <button
+                    className="adDiscussBtn"
+                    onClick={() => {
+                      setDiscEpisode(ep.num);
+                      setSelectedThreadId(null);
+                      setThread(null);
+                      const el = document.getElementById("discussion-panel");
+                      el?.scrollIntoView({
+                        behavior: "smooth",
+                        block: "start",
+                      });
+                    }}
+                    title="Open episode discussion"
+                  >
+                    Discuss
                   </button>
                 </div>
               ))}
             </div>
           )}
+        </section>
+
+        {/* -----------------------------
+            DISCUSSION PANEL
+        ------------------------------ */}
+        <section
+          id="discussion-panel"
+          className="adPanel adDiscussionPanel mangaPanel"
+        >
+          <div className="adPanelTag" aria-hidden="true">
+            Discussion
+          </div>
+
+          <div className="adDiscussionTop">
+            <div className="adDiscussionTitle">
+              {discEpisode
+                ? `Episode ${discEpisode} threads`
+                : "General threads"}
+            </div>
+
+            <div className="adDiscussionControls">
+              <button
+                className={"adScopeBtn" + (!discEpisode ? " isActive" : "")}
+                onClick={() => {
+                  setDiscEpisode(null);
+                  setSelectedThreadId(null);
+                  setThread(null);
+                }}
+              >
+                General
+              </button>
+
+              <div className="adScopeSep" aria-hidden="true" />
+
+              <label className="adScopeLabel">
+                Episode
+                <select
+                  className="adScopeSelect"
+                  value={discEpisode ?? 0}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    setDiscEpisode(v === 0 ? null : v);
+                    setSelectedThreadId(null);
+                    setThread(null);
+                  }}
+                  disabled={!episodes.length}
+                  title={
+                    !episodes.length
+                      ? "No episodes available"
+                      : "Pick an episode"
+                  }
+                >
+                  <option value={0}>—</option>
+                  {episodes.slice(0, 200).map((ep) => (
+                    <option key={ep.num} value={ep.num}>
+                      {ep.num}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <button
+                className="adPillBtn"
+                onClick={loadThreads}
+                disabled={threadsLoading}
+              >
+                {threadsLoading ? "Refreshing…" : "Refresh"}
+              </button>
+            </div>
+          </div>
+
+          <div className="adDiscussionGrid">
+            {/* Left: thread list + create */}
+            <div className="adDiscussionLeft">
+              <div className="adCreateThread">
+                <div className="adCreateHeader">Start a thread</div>
+
+                <input
+                  className="adCreateTitle"
+                  placeholder="Title (e.g. “That ending tho…”)"
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  maxLength={200}
+                />
+
+                <textarea
+                  className="adCreateBody"
+                  placeholder="Write your post…"
+                  value={newBody}
+                  onChange={(e) => setNewBody(e.target.value)}
+                  maxLength={5000}
+                />
+
+                {threadsErr && (
+                  <div className="adInlineError">
+                    <b>WHAM!</b> {threadsErr}
+                  </div>
+                )}
+
+                <button
+                  className="adCreateBtn"
+                  onClick={createThread}
+                  disabled={
+                    postingThread || !newTitle.trim() || !newBody.trim()
+                  }
+                >
+                  {postingThread ? "Posting…" : "Post thread"}
+                </button>
+              </div>
+
+              <div className="adThreadList">
+                <div className="adThreadListHeader">
+                  Threads
+                  <span className="adThreadListMeta">
+                    {threadsLoading ? "Loading…" : `${threads.length}`}
+                  </span>
+                </div>
+
+                {!threadsLoading && threads.length === 0 ? (
+                  <div className="adThreadEmpty">
+                    No threads yet. Be the first to start one.
+                  </div>
+                ) : (
+                  threads.map((t) => {
+                    const active = selectedThreadId === t.id;
+                    return (
+                      <button
+                        key={t.id}
+                        className={"adThreadItem" + (active ? " isActive" : "")}
+                        onClick={() => setSelectedThreadId(t.id)}
+                        title={t.title}
+                      >
+                        <div className="adThreadItemTitle">{t.title}</div>
+                        <div className="adThreadItemMeta">
+                          <span className="adThreadAuthor">
+                            {t.authorDisplayName}
+                          </span>
+                          <span className="adThreadDot">•</span>
+                          <span>{new Date(t.createdUtc).toLocaleString()}</span>
+                          <span className="adThreadDot">•</span>
+                          <span>{t.commentCount} replies</span>
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* Right: thread view */}
+            <div className="adDiscussionRight">
+              {!selectedThreadId ? (
+                <div className="adThreadPlaceholder">
+                  Pick a thread to read and reply.
+                </div>
+              ) : threadLoading ? (
+                <div className="adThreadPlaceholder">Loading thread…</div>
+              ) : threadErr ? (
+                <div className="adThreadPlaceholder">
+                  <b>WHAM!</b> {threadErr}
+                </div>
+              ) : !thread ? (
+                <div className="adThreadPlaceholder">Thread not found.</div>
+              ) : (
+                <div className="adThreadView">
+                  <div className="adThreadHeader">
+                    <div className="adThreadTitle">{thread.title}</div>
+                    <div className="adThreadSub">
+                      <span className="adThreadAuthor">
+                        {thread.authorDisplayName}
+                      </span>
+                      <span className="adThreadDot">•</span>
+                      <span>
+                        {new Date(thread.createdUtc).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="adThreadBody">{thread.body}</div>
+
+                  <div className="adRepliesHeader">
+                    Replies{" "}
+                    <span className="adRepliesCount">
+                      {thread.comments.length}
+                    </span>
+                  </div>
+
+                  <div className="adRepliesList">
+                    {thread.comments.length === 0 ? (
+                      <div className="adThreadEmpty">
+                        No replies yet. Drop one.
+                      </div>
+                    ) : (
+                      thread.comments.map((c) => (
+                        <div key={c.id} className="adReply">
+                          <div className="adReplyMeta">
+                            <b>{c.authorDisplayName}</b>
+                            <span className="adThreadDot">•</span>
+                            <span>
+                              {new Date(c.createdUtc).toLocaleString()}
+                            </span>
+                          </div>
+                          <div className="adReplyBody">{c.body}</div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <div className="adReplyBox">
+                    <textarea
+                      className="adReplyInput"
+                      placeholder="Write a reply…"
+                      value={replyBody}
+                      onChange={(e) => setReplyBody(e.target.value)}
+                      maxLength={3000}
+                      onKeyDown={(e) => {
+                        if ((e.ctrlKey || e.metaKey) && e.key === "Enter")
+                          postReply();
+                      }}
+                    />
+
+                    <button
+                      className="adReplyBtn"
+                      onClick={postReply}
+                      disabled={postingReply || !replyBody.trim()}
+                    >
+                      {postingReply ? "Posting…" : "Reply"}
+                    </button>
+
+                    <div className="adReplyHint">
+                      Tip: <span className="adKbd">Ctrl</span> +{" "}
+                      <span className="adKbd">Enter</span> to send
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </section>
       </main>
     </div>
