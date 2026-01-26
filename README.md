@@ -59,6 +59,7 @@ V1 focuses on:
 - ASP.NET Core Web API (.NET)
 - Entity Framework Core (database persistence)
 - ASP.NET Identity (cookie auth)
+- C#
 
 ### External Data
 
