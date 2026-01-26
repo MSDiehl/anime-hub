@@ -2,21 +2,29 @@ using AnimeHub.Domain.Entities;
 using AnimeHub.Infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
 
 namespace AnimeHub.Api.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/tracked")]
 public class TrackedShowsController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private Guid CurrentUserId =>
+        Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
     public TrackedShowsController(AppDbContext db) => _db = db;
 
     [HttpGet]
     public async Task<ActionResult<List<TrackedShow>>> GetAll()
     {
+        var uid = CurrentUserId;
+
         var items = await _db.TrackedShows
+            .Where(x => x.UserId == uid)
             .OrderByDescending(x => x.CreatedUtc)
             .ToListAsync();
 
@@ -29,11 +37,14 @@ public class TrackedShowsController : ControllerBase
         if (req.AniListId <= 0) return BadRequest("AniListId is required.");
         if (string.IsNullOrWhiteSpace(req.Title)) return BadRequest("Title is required.");
 
-        var exists = await _db.TrackedShows.AnyAsync(x => x.AniListId == req.AniListId);
+        var uid = CurrentUserId;
+
+        var exists = await _db.TrackedShows.AnyAsync(x => x.UserId == uid && x.AniListId == req.AniListId);
         if (exists) return Conflict("This show is already tracked.");
 
         var entity = new TrackedShow
         {
+            UserId = uid,
             AniListId = req.AniListId,
             Title = req.Title.Trim(),
             CoverImageUrl = req.CoverImageUrl,

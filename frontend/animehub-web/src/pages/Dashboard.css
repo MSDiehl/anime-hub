@@ -1,0 +1,445 @@
+/* ============================
+   Manga / Comic Dashboard
+   Pure CSS, no external libs
+   ============================ */
+
+.dashPage {
+  min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
+
+  --ink: #111;
+  --paper: #fbf7ef;
+  --paper2: #f4efe6;
+  --accent: #ff3b30;
+  --accent2: #ffd000;
+  --purple: #7b5cff;
+  --shadowInk: rgba(0, 0, 0, 0.40);
+  --comicFont: ui-rounded, "Comic Sans MS", "Trebuchet MS", system-ui,
+    -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+
+  font-family: var(--comicFont);
+  color: #fff;
+
+  background:
+    radial-gradient(1200px 600px at 20% 0%, rgba(123, 92, 255, 0.24), transparent 60%),
+    radial-gradient(900px 520px at 90% 18%, rgba(255, 208, 0, 0.12), transparent 62%),
+    linear-gradient(180deg, #0b0b12, #07070b);
+}
+
+/* --- Background layers --- */
+
+.dashBg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.dashInkWash {
+  position: absolute;
+  inset: -22%;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.08), transparent 55%),
+    radial-gradient(circle at 80% 30%, rgba(255, 255, 255, 0.06), transparent 58%),
+    radial-gradient(circle at 55% 85%, rgba(255, 255, 255, 0.05), transparent 60%);
+  filter: blur(16px);
+  opacity: 0.9;
+  transform: rotate(-6deg);
+}
+
+.dashSpeedLines {
+  position: absolute;
+  inset: 0;
+  opacity: 0.17;
+  background:
+    repeating-linear-gradient(
+      115deg,
+      rgba(255, 255, 255, 0.20) 0px,
+      rgba(255, 255, 255, 0.20) 2px,
+      transparent 2px,
+      transparent 18px
+    );
+  mask-image: radial-gradient(circle at 55% 20%, black 0 58%, transparent 80%);
+  animation: dashSpeedDrift 7s linear infinite;
+}
+
+.dashHalftone {
+  position: absolute;
+  inset: 0;
+  opacity: 0.14;
+  background-image:
+    radial-gradient(circle at 20% 28%, rgba(255, 255, 255, 0.25) 0 1px, transparent 2px),
+    radial-gradient(circle at 82% 22%, rgba(255, 255, 255, 0.25) 0 1px, transparent 2px),
+    radial-gradient(circle at 34% 78%, rgba(255, 255, 255, 0.22) 0 1px, transparent 2px),
+    radial-gradient(circle at 74% 82%, rgba(255, 255, 255, 0.22) 0 1px, transparent 2px);
+  background-size: 18px 18px;
+  filter: contrast(110%);
+  animation: dashDotsFloat 8s ease-in-out infinite;
+}
+
+@keyframes dashSpeedDrift {
+  0% { transform: translateX(-2%) translateY(-1%); }
+  100% { transform: translateX(2%) translateY(1%); }
+}
+
+@keyframes dashDotsFloat {
+  0%, 100% { transform: translateY(0px); opacity: 0.12; }
+  50% { transform: translateY(-10px); opacity: 0.18; }
+}
+
+/* --- Top bar --- */
+
+.dashTopBar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+
+  background: rgba(10, 10, 14, 0.62);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+.dashBrand {
+  font-weight: 1000;
+  letter-spacing: -0.3px;
+  font-size: 18px;
+  padding: 8px 12px;
+  border-radius: 999px;
+
+  background: rgba(255, 255, 255, 0.08);
+  border: 3px solid rgba(255, 255, 255, 0.10);
+  box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  user-select: none;
+}
+
+.dashTopBarRight {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.dashPillBtn,
+.dashLogoutBtn {
+  font-size: 12px;
+  padding: 9px 12px;
+  border-radius: 999px;
+  color: #fff;
+  cursor: pointer;
+
+  background: rgba(255, 255, 255, 0.08);
+  border: 3px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 5px 5px 0 rgba(0, 0, 0, 0.35);
+  font-weight: 950;
+
+  transition: transform 120ms ease, filter 140ms ease, opacity 140ms ease;
+}
+
+.dashPillBtn:hover,
+.dashLogoutBtn:hover {
+  transform: translateY(-2px);
+  filter: saturate(1.05);
+}
+
+.dashPillBtn:active,
+.dashLogoutBtn:active {
+  transform: translateY(1px);
+}
+
+.dashPillBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.dashPillBtn.isActive {
+  background: linear-gradient(135deg, rgba(255, 208, 0, 0.55), rgba(255, 106, 94, 0.38));
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.dashLogoutBtn {
+  margin-left: 6px;
+  background: linear-gradient(135deg, rgba(255, 59, 48, 0.70), rgba(255, 208, 0, 0.55));
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+/* --- Main layout --- */
+
+.dashMain {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 18px 16px 64px;
+}
+
+.dashHeaderRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.dashTitleBlock {
+  display: grid;
+  gap: 6px;
+}
+
+.dashH1 {
+  margin: 0;
+  font-size: 34px;
+  letter-spacing: -0.6px;
+  font-weight: 1000;
+  text-shadow: 2px 2px 0 rgba(0,0,0,0.35);
+}
+
+.dashBang {
+  display: inline-block;
+  transform: rotate(-8deg);
+  color: var(--accent2);
+  text-shadow: 2px 2px 0 rgba(0,0,0,0.45);
+}
+
+.dashSub {
+  opacity: 0.78;
+  font-weight: 800;
+}
+
+/* --- Stats as mini manga panels --- */
+
+.dashStatsRow {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.dashStatCard {
+  min-width: 128px;
+  padding: 10px 12px;
+  border-radius: 18px;
+
+  background: linear-gradient(180deg, var(--paper), var(--paper2));
+  border: 4px solid var(--ink);
+  box-shadow: 8px 10px 0 var(--ink), 0 18px 40px rgba(0,0,0,0.25);
+  color: var(--ink);
+}
+
+.dashStatLabel {
+  font-size: 11px;
+  opacity: 0.75;
+  font-weight: 900;
+}
+
+.dashStatValue {
+  margin-top: 3px;
+  font-size: 20px;
+  font-weight: 1000;
+  letter-spacing: -0.2px;
+}
+
+/* --- Panels (loading / empty) --- */
+
+.dashPanel {
+  border-radius: 20px;
+  padding: 16px;
+
+  background: linear-gradient(180deg, var(--paper), var(--paper2));
+  border: 4px solid var(--ink);
+  box-shadow: 10px 12px 0 var(--ink), 0 18px 60px rgba(0,0,0,0.28);
+  color: var(--ink);
+}
+
+.dashEmptyPanel {
+  max-width: 520px;
+}
+
+.dashEmptyTitle {
+  font-weight: 1000;
+  font-size: 16px;
+}
+
+.dashEmptySub {
+  opacity: 0.78;
+  margin-top: 6px;
+  font-weight: 850;
+}
+
+/* Primary button: impact burst */
+.dashPrimaryBtn {
+  margin-top: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 4px solid var(--ink);
+  background: linear-gradient(135deg, var(--accent2), #ff6a5e);
+  color: var(--ink);
+  font-weight: 1000;
+  cursor: pointer;
+  box-shadow: 10px 10px 0 var(--ink);
+  position: relative;
+  overflow: hidden;
+  transition: transform 120ms ease, box-shadow 120ms ease, filter 140ms ease;
+}
+
+.dashPrimaryBtn:hover {
+  transform: translateY(-2px) rotate(-0.2deg);
+  filter: saturate(1.08) contrast(1.05);
+}
+
+.dashPrimaryBtn:active {
+  transform: translateY(2px);
+  box-shadow: 7px 7px 0 var(--ink);
+}
+
+.dashPrimaryBurst {
+  position: absolute;
+  inset: -65%;
+  opacity: 0;
+  pointer-events: none;
+  background:
+    repeating-conic-gradient(
+      from 10deg,
+      rgba(255,255,255,0.55) 0 10deg,
+      rgba(255,255,255,0.0) 10deg 20deg
+    );
+  transition: opacity 180ms ease;
+}
+
+.dashPrimaryBtn:hover .dashPrimaryBurst {
+  opacity: 0.25;
+  animation: dashBurstSpin 1.6s linear infinite;
+}
+
+@keyframes dashBurstSpin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.dashPrimaryText {
+  position: relative;
+  z-index: 1;
+}
+
+/* --- Grid / cards --- */
+
+.dashGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+  margin-top: 10px;
+}
+
+.dashCard {
+  text-align: left;
+  border-radius: 20px;
+  overflow: hidden;
+
+  padding: 0;
+  cursor: pointer;
+
+  background: linear-gradient(180deg, var(--paper), var(--paper2));
+  border: 4px solid var(--ink);
+  box-shadow: 10px 12px 0 var(--ink), 0 22px 70px rgba(0,0,0,0.35);
+
+  color: var(--ink);
+  position: relative;
+
+  transition: transform 140ms ease, box-shadow 140ms ease, filter 140ms ease;
+}
+
+.dashCard:hover {
+  transform: translateY(-3px);
+  box-shadow: 12px 14px 0 var(--ink), 0 28px 90px rgba(0,0,0,0.40);
+  filter: saturate(1.02);
+}
+
+.dashCard:active {
+  transform: translateY(1px);
+}
+
+.dashCover {
+  height: 140px;
+  background: rgba(0,0,0,0.06);
+  background-size: cover;
+  background-position: center;
+  border-bottom: 4px solid var(--ink);
+}
+
+.dashCardBody {
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.dashCardTitle {
+  font-weight: 1000;
+  letter-spacing: -0.2px;
+  line-height: 1.2;
+}
+
+.dashMeta {
+  font-size: 12px;
+  opacity: 0.78;
+  font-weight: 850;
+}
+
+.dashRow {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.dashSmall {
+  font-size: 12px;
+  opacity: 0.78;
+  font-weight: 850;
+}
+
+/* little corner tag */
+.dashCardCorner {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #fff;
+  border: 3px solid var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+  font-size: 11px;
+  font-weight: 1000;
+  transform: rotate(4deg);
+}
+
+/* --- Responsive --- */
+
+@media (max-width: 520px) {
+  .dashH1 {
+    font-size: 30px;
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .dashSpeedLines,
+  .dashHalftone {
+    animation: none !important;
+  }
+  .dashPillBtn,
+  .dashLogoutBtn,
+  .dashPrimaryBtn,
+  .dashCard {
+    transition: none !important;
+  }
+  .dashPrimaryBtn:hover .dashPrimaryBurst {
+    animation: none !important;
+  }
+}
