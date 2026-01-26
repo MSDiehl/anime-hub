@@ -268,9 +268,7 @@ export default function Home({ onLogout }: HomeProps) {
                     HOT!
                   </span>
                 </div>
-                <span className="homeMuted">
-                  Dummy cards for now — I'll wire to DB next.
-                </span>
+                <span className="homeMuted">Dummy cards currently.</span>
               </div>
 
               <div className="homeCardGrid">
