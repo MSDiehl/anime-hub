@@ -1,7 +1,5 @@
 /* ============================
    Manga / Comic Anime Details
-   Pure CSS, no external libs
-   Manga page panels + gutters
    ============================ */
 
 .adPage {
@@ -26,8 +24,6 @@
     radial-gradient(900px 520px at 90% 18%, rgba(255, 208, 0, 0.12), transparent 62%),
     linear-gradient(180deg, #0b0b12, #07070b);
 }
-
-/* --- Background layers --- */
 
 .adBg {
   position: absolute;
@@ -88,8 +84,6 @@
   50% { transform: translateY(-10px); opacity: 0.18; }
 }
 
-/* --- Top bar --- */
-
 .adTopBar {
   position: sticky;
   top: 0;
@@ -146,8 +140,6 @@
 .adPillBtn:hover { transform: translateY(-2px); filter: saturate(1.05); }
 .adPillBtn:active { transform: translateY(1px); }
 
-/* --- Hero / splash --- */
-
 .adHero {
   position: relative;
 }
@@ -168,8 +160,6 @@
   background:
     linear-gradient(to bottom, rgba(11,11,16,.12), rgba(11,11,16,.82) 78%, rgba(11,11,16,1));
 }
-
-/* grid: cover + title panel + seasons panel */
 .adHeroInner {
   max-width: 1200px;
   margin: -88px auto 0;
@@ -194,8 +184,6 @@
   transform: rotate(-0.6deg);
 }
 
-/* --- Manga panel base --- */
-
 .mangaPanel {
   border-radius: 20px;
   background:
@@ -209,7 +197,6 @@
   position: relative;
 }
 
-/* inner dashed ink line */
 .mangaPanel::before {
   content: "";
   position: absolute;
@@ -219,7 +206,6 @@
   pointer-events: none;
 }
 
-/* panel tag (like a printed label) */
 .adPanelTag {
   position: absolute;
   top: -14px;
@@ -234,8 +220,6 @@
   letter-spacing: 0.8px;
   transform: rotate(-4deg);
 }
-
-/* --- Hero panels --- */
 
 .adHeroText {
   padding: 16px;
@@ -303,7 +287,6 @@
   font-weight: 950;
 }
 
-/* Seasons panel */
 .adSeasonPanel {
   padding: 14px;
   min-height: 230px;
@@ -373,27 +356,22 @@
 }
 .adSeasonMeta { font-size: 11px; opacity: 0.75; margin-top: 2px; font-weight: 900; }
 
-/* --- Manga page main area --- */
-
 .adMain {
   max-width: 1200px;
   margin: 0 auto;
   padding: 12px 16px 60px;
 }
 
-/* Gutters: feel like a printed manga page */
 .adGrid {
   display: grid;
   grid-template-columns: 1fr 420px;
   gap: 16px;
 }
 
-/* panels */
 .adPanel {
   padding: 16px;
 }
 
-/* typography */
 .adH2 {
   margin: 0 0 10px;
   font-size: 16px;
@@ -409,7 +387,6 @@
   line-height: 1.55;
 }
 
-/* Charts block inside a panel = “sub-panel” */
 .adChartBlock {
   padding: 12px;
   border-radius: 16px;
@@ -489,7 +466,6 @@
   font-weight: 950;
 }
 
-/* disabled button still looks like a “coming soon” stamp */
 .adRateBtn {
   margin-top: 2px;
   padding: 9px 10px;
@@ -555,7 +531,6 @@
   .adH1 { font-size: 28px; }
 }
 
-/* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   .adSpeedLines,
   .adHalftone {
@@ -970,3 +945,108 @@
     grid-template-columns: 1fr;
   }
 }
+
+.adDiscussionPanel,
+.adDiscussionPanel *,
+.adDiscussionPanel *::before,
+.adDiscussionPanel *::after {
+  box-sizing: border-box;
+}
+
+.adDiscussionGrid > * {
+  min-width: 0;
+}
+
+.adCreateThread,
+.adThreadList {
+  overflow: hidden;
+}
+
+.adCreateTitle,
+.adCreateBody,
+.adCreateBtn {
+  display: block;
+  max-width: 100%;
+}
+
+.adCreateTitle,
+.adCreateBody {
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.adCreateTitle,
+.adCreateBody {
+  padding: 9px 10px;
+}
+
+.adScopeBtn.isActive {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 208, 0, 0.70),
+    rgba(255, 106, 94, 0.25)
+  );
+}
+
+@media (max-width: 980px) {
+  .adDiscussionGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.adCreateTitle,
+.adCreateBody,
+.adReplyInput,
+.adScopeSelect {
+  color: var(--ink);
+  caret-color: var(--ink);
+}
+
+.adCreateTitle::placeholder,
+.adCreateBody::placeholder,
+.adReplyInput::placeholder {
+  color: rgba(0, 0, 0, 0.55);
+  opacity: 1;
+}
+
+.adCreateTitle:focus,
+.adCreateBody:focus,
+.adReplyInput:focus,
+.adScopeSelect:focus {
+  color: var(--ink);
+}
+
+.adDiscussionPanel,
+.adCreateThread,
+.adThreadList,
+.adThreadView,
+.adThreadPlaceholder,
+.adThreadEmpty,
+.adThreadItem {
+  color: var(--ink);
+}
+
+.adCreateBtn,
+.adThreadItem {
+  color: var(--ink);
+}
+
+.adCreateBtn:disabled {
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.adThreadItemTitle,
+.adThreadItemMeta,
+.adThreadListHeader,
+.adThreadListMeta,
+.adThreadTitle,
+.adThreadSub,
+.adThreadBody {
+  color: inherit;
+}
+
+.adDiscussionControls .adPillBtn {
+  color: var(--ink);
+}
+
+
