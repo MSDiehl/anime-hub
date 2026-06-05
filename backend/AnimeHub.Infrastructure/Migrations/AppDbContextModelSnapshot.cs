@@ -106,8 +106,14 @@ namespace AnimeHub.Infrastructure.Migrations
                     b.Property<string>("CoverImageUrl")
                         .HasColumnType("text");
 
+                    b.Property<DateOnly?>("CompletedOn")
+                        .HasColumnType("date");
+
                     b.Property<DateTime>("CreatedUtc")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("EpisodeProgress")
+                        .HasColumnType("integer");
 
                     b.Property<int?>("Episodes")
                         .HasColumnType("integer");
@@ -115,7 +121,28 @@ namespace AnimeHub.Infrastructure.Migrations
                     b.Property<string>("Format")
                         .HasColumnType("text");
 
+                    b.Property<string>("GenreCsv")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<bool>("IsFavorite")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<int?>("PersonalRating")
+                        .HasColumnType("integer");
+
                     b.Property<int?>("Popularity")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Review")
+                        .HasMaxLength(8000)
+                        .HasColumnType("character varying(8000)");
+
+                    b.Property<int>("RewatchCount")
                         .HasColumnType("integer");
 
                     b.Property<string>("Season")
@@ -123,6 +150,9 @@ namespace AnimeHub.Infrastructure.Migrations
 
                     b.Property<int?>("SeasonYear")
                         .HasColumnType("integer");
+
+                    b.Property<DateOnly?>("StartedOn")
+                        .HasColumnType("date");
 
                     b.Property<string>("Status")
                         .HasColumnType("text");
@@ -132,12 +162,24 @@ namespace AnimeHub.Infrastructure.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)");
 
+                    b.Property<string>("TrackingStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime?>("UpdatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
                     b.HasIndex("UserId");
+
+                    b.HasIndex("UserId", "IsFavorite");
+
+                    b.HasIndex("UserId", "TrackingStatus");
 
                     b.HasIndex("UserId", "AniListId")
                         .IsUnique();

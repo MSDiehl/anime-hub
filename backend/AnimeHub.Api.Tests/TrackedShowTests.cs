@@ -14,5 +14,9 @@ public class TrackedShowTests
 
         Assert.NotEqual(Guid.Empty, show.Id);
         Assert.InRange(show.CreatedUtc, before, after);
+        Assert.Equal("PlanToWatch", show.TrackingStatus);
+        Assert.Equal(0, show.EpisodeProgress);
+        Assert.False(show.IsFavorite);
+        Assert.Equal(0, show.RewatchCount);
     }
 }

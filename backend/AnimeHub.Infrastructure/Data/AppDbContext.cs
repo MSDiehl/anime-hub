@@ -24,7 +24,13 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid
         {
             entity.HasIndex(x => new { x.UserId, x.AniListId }).IsUnique();
             entity.HasIndex(x => x.UserId);
+            entity.HasIndex(x => new { x.UserId, x.TrackingStatus });
+            entity.HasIndex(x => new { x.UserId, x.IsFavorite });
             entity.Property(x => x.Title).HasMaxLength(300);
+            entity.Property(x => x.GenreCsv).HasMaxLength(500);
+            entity.Property(x => x.TrackingStatus).HasMaxLength(32);
+            entity.Property(x => x.Notes).HasMaxLength(4000);
+            entity.Property(x => x.Review).HasMaxLength(8000);
         });
 
         modelBuilder.Entity<ApplicationUser>(entity =>

@@ -17,10 +17,58 @@ type RelatedSeason = {
   aniListId: number;
   title: string;
   relationType?: string | null;
+  format?: string | null;
   season?: string | null;
   seasonYear?: number | null;
   status?: string | null;
+  averageScore?: number | null;
+  popularity?: number | null;
   coverImageUrl?: string | null;
+};
+
+type NextAiringEpisode = {
+  episode: number;
+  airingAt: number;
+  timeUntilAiring?: number | null;
+};
+
+type Trailer = {
+  id: string;
+  site?: string | null;
+  thumbnailUrl?: string | null;
+  url?: string | null;
+  embedUrl?: string | null;
+};
+
+type Studio = {
+  aniListId: number;
+  name: string;
+  siteUrl?: string | null;
+};
+
+type ExternalLink = {
+  aniListId: number;
+  site: string;
+  url: string;
+  type?: string | null;
+  color?: string | null;
+  iconUrl?: string | null;
+};
+
+type Character = {
+  aniListId: number;
+  name: string;
+  imageUrl?: string | null;
+  role?: string | null;
+  voiceActorName?: string | null;
+  voiceActorImageUrl?: string | null;
+};
+
+type StaffMember = {
+  aniListId: number;
+  name: string;
+  imageUrl?: string | null;
+  role?: string | null;
 };
 
 type AnimeDetailsDto = {
@@ -37,8 +85,90 @@ type AnimeDetailsDto = {
   season?: string | null;
   seasonYear?: number | null;
   genres?: string[];
+  source?: string | null;
+  siteUrl?: string | null;
+  nextAiringEpisode?: NextAiringEpisode | null;
+  trailer?: Trailer | null;
+  studios?: Studio[];
+  externalLinks?: ExternalLink[];
+  characters?: Character[];
+  staff?: StaffMember[];
   relatedSeasons?: RelatedSeason[];
 };
+
+type TrackingStatus =
+  | "Watching"
+  | "Completed"
+  | "Paused"
+  | "Dropped"
+  | "PlanToWatch";
+
+type TrackedShow = {
+  id: string;
+  aniListId: number;
+  title: string;
+  coverImageUrl?: string | null;
+  format?: string | null;
+  status?: string | null;
+  episodes?: number | null;
+  season?: string | null;
+  seasonYear?: number | null;
+  averageScore?: number | null;
+  popularity?: number | null;
+  genres: string[];
+  trackingStatus: TrackingStatus;
+  episodeProgress: number;
+  nextEpisode?: number | null;
+  personalRating?: number | null;
+  isFavorite: boolean;
+  notes?: string | null;
+  review?: string | null;
+  rewatchCount: number;
+  startedOn?: string | null;
+  completedOn?: string | null;
+  createdUtc: string;
+  updatedUtc?: string | null;
+};
+
+const trackingStatuses: TrackingStatus[] = [
+  "Watching",
+  "Completed",
+  "Paused",
+  "Dropped",
+  "PlanToWatch",
+];
+
+const trackingStatusLabels: Record<TrackingStatus, string> = {
+  Watching: "Watching",
+  Completed: "Completed",
+  Paused: "Paused",
+  Dropped: "Dropped",
+  PlanToWatch: "Plan to Watch",
+};
+
+function humanizeEnum(value?: string | null) {
+  if (!value) return "—";
+  return value
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatAiringTime(value?: number | null) {
+  if (!value) return "—";
+  return new Date(value * 1000).toLocaleString([], {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function shortTitle(value: string) {
+  return value.length > 16 ? `${value.slice(0, 15)}...` : value;
+}
 
 type ThreadSummary = {
   id: string;
@@ -83,6 +213,10 @@ export default function AnimeDetails({ onLogout }: Props) {
   const [loading, setLoading] = useState(true);
   const [detailsError, setDetailsError] = useState<string | null>(null);
   const [detailsReloadKey, setDetailsReloadKey] = useState(0);
+  const [trackedShow, setTrackedShow] = useState<TrackedShow | null>(null);
+  const [trackingLoading, setTrackingLoading] = useState(false);
+  const [trackingSaving, setTrackingSaving] = useState(false);
+  const [trackingError, setTrackingError] = useState<string | null>(null);
 
   // discussion state
   const [discEpisode, setDiscEpisode] = useState<number | null>(null); // null = general
@@ -101,6 +235,8 @@ export default function AnimeDetails({ onLogout }: Props) {
 
   const [replyBody, setReplyBody] = useState("");
   const [postingReply, setPostingReply] = useState(false);
+  const [spoilerSafe, setSpoilerSafe] = useState(true);
+  const [threadSpoilersRevealed, setThreadSpoilersRevealed] = useState(false);
 
   useEffect(() => setActiveId(routeId), [routeId]);
 
@@ -116,14 +252,19 @@ export default function AnimeDetails({ onLogout }: Props) {
 
   const chartData = useMemo(() => {
     if (!data) return [];
-    const baseScore = data.averageScore ?? 70;
-    const basePop = data.popularity ?? 100000;
 
-    return Array.from({ length: 10 }).map((_, i) => ({
-      t: `W${i + 1}`,
-      score: Math.max(0, Math.min(100, baseScore + (i - 5) * 0.6)),
-      pop: Math.max(0, basePop + (i - 5) * 1500),
-    }));
+    return [
+      {
+        t: shortTitle(data.title),
+        score: data.averageScore ?? null,
+        pop: data.popularity ?? null,
+      },
+      ...(data.relatedSeasons ?? []).map((item) => ({
+        t: shortTitle(item.title),
+        score: item.averageScore ?? null,
+        pop: item.popularity ?? null,
+      })),
+    ].filter((item) => item.score !== null || item.pop !== null);
   }, [data]);
 
   const sanitizedDescription = useMemo(
@@ -184,6 +325,172 @@ export default function AnimeDetails({ onLogout }: Props) {
     };
   }, [activeId, detailsReloadKey]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadTrackedShow() {
+      setTrackingLoading(true);
+      setTrackingError(null);
+      setTrackedShow(null);
+
+      try {
+        const res = await fetch(`/api/tracked/${activeId}`, {
+          credentials: "include",
+        });
+
+        if (res.status === 404) {
+          if (!cancelled) setTrackedShow(null);
+          return;
+        }
+
+        if (!res.ok) {
+          throw new Error(
+            await readApiError(res, "Failed to load tracking details"),
+          );
+        }
+
+        const json = (await res.json()) as TrackedShow;
+        if (!cancelled) setTrackedShow(json);
+      } catch (e: unknown) {
+        if (!cancelled) {
+          setTrackingError(
+            getErrorMessage(e, "Failed to load tracking details"),
+          );
+          setTrackedShow(null);
+        }
+      } finally {
+        if (!cancelled) setTrackingLoading(false);
+      }
+    }
+
+    if (Number.isFinite(activeId) && activeId > 0) {
+      loadTrackedShow();
+    } else {
+      setTrackedShow(null);
+      setTrackingLoading(false);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeId]);
+
+  function dateOrNull(value: string) {
+    return value ? value : null;
+  }
+
+  function numberOrNull(value: string) {
+    return value === "" ? null : Number(value);
+  }
+
+  function trackingPayload(overrides: Partial<TrackedShow> = {}) {
+    if (!data) return null;
+
+    return {
+      aniListId: data.aniListId,
+      title: data.title,
+      coverImageUrl: data.coverImageUrl,
+      format: data.format,
+      status: data.status,
+      episodes: data.episodes,
+      season: data.season,
+      seasonYear: data.seasonYear,
+      averageScore: data.averageScore,
+      popularity: data.popularity,
+      genres: data.genres ?? [],
+      trackingStatus: "PlanToWatch",
+      ...overrides,
+    };
+  }
+
+  async function trackCurrent(overrides: Partial<TrackedShow> = {}) {
+    const payload = trackingPayload(overrides);
+    if (!payload) return;
+
+    setTrackingSaving(true);
+    setTrackingError(null);
+
+    try {
+      const res = await fetch("/api/tracked", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+
+      if (res.status === 409) {
+        const existing = await fetch(`/api/tracked/${activeId}`, {
+          credentials: "include",
+        });
+        if (existing.ok) setTrackedShow((await existing.json()) as TrackedShow);
+        return;
+      }
+
+      if (!res.ok) {
+        throw new Error(await readApiError(res, "Failed to track show"));
+      }
+
+      setTrackedShow((await res.json()) as TrackedShow);
+    } catch (e: unknown) {
+      setTrackingError(getErrorMessage(e, "Failed to track show"));
+    } finally {
+      setTrackingSaving(false);
+    }
+  }
+
+  async function patchTrackedShow(patch: Partial<TrackedShow>) {
+    if (!trackedShow) {
+      await trackCurrent(patch);
+      return;
+    }
+
+    setTrackingSaving(true);
+    setTrackingError(null);
+
+    try {
+      const res = await fetch(`/api/tracked/${activeId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(patch),
+      });
+
+      if (!res.ok) {
+        throw new Error(await readApiError(res, "Failed to update show"));
+      }
+
+      setTrackedShow((await res.json()) as TrackedShow);
+    } catch (e: unknown) {
+      setTrackingError(getErrorMessage(e, "Failed to update show"));
+    } finally {
+      setTrackingSaving(false);
+    }
+  }
+
+  async function untrackCurrent() {
+    if (!trackedShow) return;
+
+    setTrackingSaving(true);
+    setTrackingError(null);
+
+    try {
+      const res = await fetch(`/api/tracked/${activeId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+
+      if (!res.ok && res.status !== 404) {
+        throw new Error(await readApiError(res, "Failed to untrack show"));
+      }
+
+      setTrackedShow(null);
+    } catch (e: unknown) {
+      setTrackingError(getErrorMessage(e, "Failed to untrack show"));
+    } finally {
+      setTrackingSaving(false);
+    }
+  }
+
   async function loadThreads() {
     setThreadsLoading(true);
     setThreadsErr(null);
@@ -236,6 +543,10 @@ export default function AnimeDetails({ onLogout }: Props) {
     loadThread(selectedThreadId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedThreadId]);
+
+  useEffect(() => {
+    setThreadSpoilersRevealed(false);
+  }, [selectedThreadId, spoilerSafe]);
 
   async function createThread() {
     if (!newTitle.trim() || !newBody.trim()) return;
@@ -346,9 +657,18 @@ export default function AnimeDetails({ onLogout }: Props) {
       </div>
     );
 
-  const seasons = (data.relatedSeasons ?? [])
+  const relations = (data.relatedSeasons ?? [])
     .slice()
-    .sort((a, b) => (a.seasonYear ?? 9999) - (b.seasonYear ?? 9999));
+    .sort(
+      (a, b) =>
+        (a.seasonYear ?? 9999) - (b.seasonYear ?? 9999) ||
+        (a.season ?? "").localeCompare(b.season ?? "") ||
+        a.title.localeCompare(b.title),
+    );
+  const isTracked = trackedShow !== null;
+  const currentProgress = trackedShow?.episodeProgress ?? 0;
+  const maxEpisodes = data.episodes && data.episodes > 0 ? data.episodes : undefined;
+  const nextAiring = data.nextAiringEpisode;
 
   return (
     <div className="adPage">
@@ -410,6 +730,9 @@ export default function AnimeDetails({ onLogout }: Props) {
                   {data.season ?? ""} {data.seasonYear ?? ""}
                 </span>
               )}
+              {data.source && (
+                <span className="adChip">{humanizeEnum(data.source)}</span>
+              )}
             </div>
 
             <div className="adStatRow">
@@ -420,6 +743,14 @@ export default function AnimeDetails({ onLogout }: Props) {
               <div className="adStat">
                 <div className="adStatLabel">Popularity</div>
                 <div className="adStatValue">{data.popularity ?? "—"}</div>
+              </div>
+              <div className="adStat adWideStat">
+                <div className="adStatLabel">Next Airing</div>
+                <div className="adStatValue">
+                  {nextAiring
+                    ? `EP ${nextAiring.episode} ${formatAiringTime(nextAiring.airingAt)}`
+                    : "—"}
+                </div>
               </div>
             </div>
 
@@ -436,14 +767,14 @@ export default function AnimeDetails({ onLogout }: Props) {
 
           <div className="adSeasonPanel mangaPanel">
             <div className="adPanelTag" aria-hidden="true">
-              SEASONS
+              RELATIONS
             </div>
 
-            {seasons.length === 0 ? (
-              <div className="adSeasonEmpty">No related seasons found yet.</div>
+            {relations.length === 0 ? (
+              <div className="adSeasonEmpty">No related anime found yet.</div>
             ) : (
               <div className="adSeasonList">
-                {seasons.map((s) => {
+                {relations.map((s) => {
                   const active = s.aniListId === data.aniListId;
                   return (
                     <button
@@ -466,9 +797,15 @@ export default function AnimeDetails({ onLogout }: Props) {
                       <div className="adSeasonText">
                         <div className="adSeasonName">{s.title}</div>
                         <div className="adSeasonMeta">
-                          {s.season || s.seasonYear
-                            ? `${s.season ?? ""} ${s.seasonYear ?? ""}`.trim()
-                            : (s.relationType ?? "Season")}
+                          {[
+                            humanizeEnum(s.relationType),
+                            s.format,
+                            s.season || s.seasonYear
+                              ? `${s.season ?? ""} ${s.seasonYear ?? ""}`.trim()
+                              : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" • ")}
                         </div>
                       </div>
                     </button>
@@ -481,6 +818,186 @@ export default function AnimeDetails({ onLogout }: Props) {
       </div>
 
       <main className="adMain">
+        <section className="adPanel adTrackingPanel mangaPanel">
+          <div className="adPanelTag" aria-hidden="true">
+            My List
+          </div>
+
+          <div className="adTrackingTop">
+            <div>
+              <h2 className="adH2 adH2NoMargin">
+                {isTracked
+                  ? trackingStatusLabels[trackedShow.trackingStatus]
+                  : "Not tracked"}
+              </h2>
+              <div className="adTrackingMeta">
+                {trackingLoading
+                  ? "Loading tracking state..."
+                  : isTracked
+                    ? `Episode ${currentProgress}${maxEpisodes ? ` / ${maxEpisodes}` : ""}`
+                    : "Add it to your list to save progress, rating, notes, and dates."}
+              </div>
+            </div>
+
+            <div className="adTrackingActions">
+              {isTracked ? (
+                <button
+                  className="adPillBtn adDangerBtn"
+                  onClick={untrackCurrent}
+                  disabled={trackingSaving}
+                >
+                  {trackingSaving ? "Saving..." : "Untrack"}
+                </button>
+              ) : (
+                <button
+                  className="adPillBtn adPrimaryBtn"
+                  onClick={() => trackCurrent()}
+                  disabled={trackingSaving || trackingLoading}
+                >
+                  {trackingSaving ? "Saving..." : "Track"}
+                </button>
+              )}
+
+              <button
+                className={[
+                  "adPillBtn",
+                  trackedShow?.isFavorite ? "adFavoriteBtn isActive" : "adFavoriteBtn",
+                ].join(" ")}
+                onClick={() =>
+                  patchTrackedShow({ isFavorite: !(trackedShow?.isFavorite ?? false) })
+                }
+                disabled={trackingSaving || trackingLoading}
+              >
+                {trackedShow?.isFavorite ? "Favorited" : "Favorite"}
+              </button>
+            </div>
+          </div>
+
+          {trackingError && (
+            <div className="adInlineError adTrackingError">
+              <b>WHAM!</b> {trackingError}
+            </div>
+          )}
+
+          <div className="adTrackingGrid">
+            <label className="adTrackingField">
+              Status
+              <select
+                value={trackedShow?.trackingStatus ?? "PlanToWatch"}
+                onChange={(e) =>
+                  patchTrackedShow({
+                    trackingStatus: e.target.value as TrackingStatus,
+                  })
+                }
+                disabled={!isTracked || trackingSaving}
+              >
+                {trackingStatuses.map((status) => (
+                  <option key={status} value={status}>
+                    {trackingStatusLabels[status]}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="adTrackingField">
+              Episodes
+              <input
+                type="number"
+                min={0}
+                max={maxEpisodes}
+                value={currentProgress}
+                onChange={(e) =>
+                  patchTrackedShow({
+                    episodeProgress: Math.max(0, Number(e.target.value || 0)),
+                  })
+                }
+                disabled={!isTracked || trackingSaving}
+              />
+            </label>
+
+            <label className="adTrackingField">
+              Rating
+              <select
+                value={trackedShow?.personalRating ?? ""}
+                onChange={(e) =>
+                  patchTrackedShow({
+                    personalRating: numberOrNull(e.target.value),
+                  })
+                }
+                disabled={!isTracked || trackingSaving}
+              >
+                <option value="">No rating</option>
+                {Array.from({ length: 11 }, (_, value) => (
+                  <option key={value} value={value}>
+                    {value}/10
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="adTrackingField">
+              Rewatches
+              <input
+                type="number"
+                min={0}
+                value={trackedShow?.rewatchCount ?? 0}
+                onChange={(e) =>
+                  patchTrackedShow({
+                    rewatchCount: Math.max(0, Number(e.target.value || 0)),
+                  })
+                }
+                disabled={!isTracked || trackingSaving}
+              />
+            </label>
+
+            <label className="adTrackingField">
+              Started
+              <input
+                type="date"
+                value={trackedShow?.startedOn ?? ""}
+                onChange={(e) =>
+                  patchTrackedShow({ startedOn: dateOrNull(e.target.value) })
+                }
+                disabled={!isTracked || trackingSaving}
+              />
+            </label>
+
+            <label className="adTrackingField">
+              Finished
+              <input
+                type="date"
+                value={trackedShow?.completedOn ?? ""}
+                onChange={(e) =>
+                  patchTrackedShow({ completedOn: dateOrNull(e.target.value) })
+                }
+                disabled={!isTracked || trackingSaving}
+              />
+            </label>
+          </div>
+
+          <div className="adTrackingTextGrid">
+            <label className="adTrackingField">
+              Notes
+              <textarea
+                key={`notes-${trackedShow?.id ?? activeId}`}
+                defaultValue={trackedShow?.notes ?? ""}
+                onBlur={(e) => patchTrackedShow({ notes: e.currentTarget.value })}
+                disabled={!isTracked || trackingSaving}
+              />
+            </label>
+
+            <label className="adTrackingField">
+              Review
+              <textarea
+                key={`review-${trackedShow?.id ?? activeId}`}
+                defaultValue={trackedShow?.review ?? ""}
+                onBlur={(e) => patchTrackedShow({ review: e.currentTarget.value })}
+                disabled={!isTracked || trackingSaving}
+              />
+            </label>
+          </div>
+        </section>
+
         <div className="adGrid">
           <section className="adPanel mangaPanel">
             <div className="adPanelTag" aria-hidden="true">
@@ -499,7 +1016,7 @@ export default function AnimeDetails({ onLogout }: Props) {
             </div>
 
             <div className="adChartBlock">
-              <div className="adChartLabel">Score (placeholder)</div>
+              <div className="adChartLabel">Score by related anime</div>
               <div className="adChartWrap">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={chartData}>
@@ -519,7 +1036,7 @@ export default function AnimeDetails({ onLogout }: Props) {
             </div>
 
             <div className="adChartBlock">
-              <div className="adChartLabel">Popularity (placeholder)</div>
+              <div className="adChartLabel">Popularity by related anime</div>
               <div className="adChartWrap">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={chartData}>
@@ -536,6 +1053,151 @@ export default function AnimeDetails({ onLogout }: Props) {
                   </LineChart>
                 </ResponsiveContainer>
               </div>
+            </div>
+          </section>
+        </div>
+
+        <div className="adInfoGrid">
+          <section className="adPanel adInfoPanel mangaPanel">
+            <div className="adPanelTag" aria-hidden="true">
+              Info
+            </div>
+
+            <div className="adFactGrid">
+              <div className="adFact">
+                <span>Source</span>
+                <b>{humanizeEnum(data.source)}</b>
+              </div>
+              <div className="adFact">
+                <span>Studios</span>
+                <b>
+                  {data.studios?.length
+                    ? data.studios.map((studio) => studio.name).join(", ")
+                    : "—"}
+                </b>
+              </div>
+              <div className="adFact">
+                <span>Next airing</span>
+                <b>
+                  {nextAiring
+                    ? `Episode ${nextAiring.episode} • ${formatAiringTime(nextAiring.airingAt)}`
+                    : "—"}
+                </b>
+              </div>
+            </div>
+
+            <div className="adExternalLinks">
+              {data.siteUrl && (
+                <a href={data.siteUrl} target="_blank" rel="noreferrer">
+                  AniList
+                </a>
+              )}
+              {data.externalLinks?.slice(0, 8).map((link) => (
+                <a
+                  key={`${link.aniListId}-${link.site}`}
+                  href={link.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={link.color ? { borderColor: link.color } : undefined}
+                >
+                  {link.site}
+                </a>
+              ))}
+            </div>
+          </section>
+
+          <section className="adPanel adTrailerPanel mangaPanel">
+            <div className="adPanelTag" aria-hidden="true">
+              Trailer
+            </div>
+
+            {data.trailer?.embedUrl ? (
+              <iframe
+                className="adTrailerFrame"
+                src={data.trailer.embedUrl}
+                title={`${data.title} trailer`}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+              />
+            ) : data.trailer?.url ? (
+              <a
+                className="adTrailerLink"
+                href={data.trailer.url}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  backgroundImage: data.trailer.thumbnailUrl
+                    ? `url(${data.trailer.thumbnailUrl})`
+                    : undefined,
+                }}
+              >
+                Watch trailer
+              </a>
+            ) : (
+              <div className="adSeasonEmpty">No trailer listed.</div>
+            )}
+          </section>
+        </div>
+
+        <div className="adPeopleGrid">
+          <section className="adPanel mangaPanel">
+            <div className="adPanelTag" aria-hidden="true">
+              Characters
+            </div>
+
+            <div className="adPeopleList">
+              {(data.characters ?? []).length === 0 ? (
+                <div className="adSeasonEmpty">No characters listed.</div>
+              ) : (
+                data.characters?.map((character) => (
+                  <div key={character.aniListId} className="adPersonCard">
+                    <div
+                      className="adPersonImage"
+                      style={{
+                        backgroundImage: character.imageUrl
+                          ? `url(${character.imageUrl})`
+                          : undefined,
+                      }}
+                    />
+                    <div className="adPersonText">
+                      <b>{character.name}</b>
+                      <span>{humanizeEnum(character.role)}</span>
+                      {character.voiceActorName && (
+                        <small>VA: {character.voiceActorName}</small>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+
+          <section className="adPanel mangaPanel">
+            <div className="adPanelTag" aria-hidden="true">
+              Staff
+            </div>
+
+            <div className="adPeopleList">
+              {(data.staff ?? []).length === 0 ? (
+                <div className="adSeasonEmpty">No staff listed.</div>
+              ) : (
+                data.staff?.map((member) => (
+                  <div key={`${member.aniListId}-${member.role}`} className="adPersonCard">
+                    <div
+                      className="adPersonImage"
+                      style={{
+                        backgroundImage: member.imageUrl
+                          ? `url(${member.imageUrl})`
+                          : undefined,
+                      }}
+                    />
+                    <div className="adPersonText">
+                      <b>{member.name}</b>
+                      <span>{member.role ?? "Staff"}</span>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </section>
         </div>
@@ -573,32 +1235,56 @@ export default function AnimeDetails({ onLogout }: Props) {
             </div>
           ) : (
             <div className="adEpisodeGrid">
-              {episodes.map((ep) => (
-                <div key={ep.num} className="adEpCard">
-                  <div className="adEpNum">EP {ep.num}</div>
-                  <div className="adEpBadges">
-                    {ep.isFiller && <span className="adBadge">Filler</span>}
-                    {ep.arc && <span className="adBadge">{ep.arc}</span>}
-                  </div>
+              {episodes.map((ep) => {
+                const watched = currentProgress >= ep.num;
 
-                  <button
-                    className="adDiscussBtn"
-                    onClick={() => {
-                      setDiscEpisode(ep.num);
-                      setSelectedThreadId(null);
-                      setThread(null);
-                      const el = document.getElementById("discussion-panel");
-                      el?.scrollIntoView({
-                        behavior: "smooth",
-                        block: "start",
-                      });
-                    }}
-                    title="Open episode discussion"
-                  >
-                    Discuss
-                  </button>
-                </div>
-              ))}
+                return (
+                  <div key={ep.num} className="adEpCard">
+                    <div className="adEpNum">EP {ep.num}</div>
+                    <div className="adEpBadges">
+                      {watched && <span className="adBadge">Watched</span>}
+                      {ep.isFiller && <span className="adBadge">Filler</span>}
+                      {ep.arc && <span className="adBadge">{ep.arc}</span>}
+                    </div>
+
+                    <div className="adEpActions">
+                      <label className="adEpisodeCheck" title="Save episode progress">
+                        <input
+                          type="checkbox"
+                          checked={watched}
+                          disabled={trackingSaving}
+                          onChange={(e) =>
+                            patchTrackedShow({
+                              episodeProgress: e.currentTarget.checked
+                                ? ep.num
+                                : Math.max(0, ep.num - 1),
+                              trackingStatus: "Watching",
+                            })
+                          }
+                        />
+                        <span>{watched ? "Watched" : "Watched"}</span>
+                      </label>
+
+                      <button
+                        className="adDiscussBtn"
+                        onClick={() => {
+                          setDiscEpisode(ep.num);
+                          setSelectedThreadId(null);
+                          setThread(null);
+                          const el = document.getElementById("discussion-panel");
+                          el?.scrollIntoView({
+                            behavior: "smooth",
+                            block: "start",
+                          });
+                        }}
+                        title="Open episode discussion"
+                      >
+                        Discuss
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>
@@ -661,6 +1347,13 @@ export default function AnimeDetails({ onLogout }: Props) {
                   ))}
                 </select>
               </label>
+
+              <button
+                className={"adScopeBtn" + (spoilerSafe ? " isActive" : "")}
+                onClick={() => setSpoilerSafe((value) => !value)}
+              >
+                Spoiler-safe
+              </button>
 
               <button
                 className="adPillBtn"
@@ -733,7 +1426,11 @@ export default function AnimeDetails({ onLogout }: Props) {
                         onClick={() => setSelectedThreadId(t.id)}
                         title={t.title}
                       >
-                        <div className="adThreadItemTitle">{t.title}</div>
+                        <div className="adThreadItemTitle">
+                          {spoilerSafe && t.episodeNumber
+                            ? `Episode ${t.episodeNumber} thread`
+                            : t.title}
+                        </div>
                         <div className="adThreadItemMeta">
                           <span className="adThreadAuthor">
                             {t.authorDisplayName}
@@ -767,7 +1464,11 @@ export default function AnimeDetails({ onLogout }: Props) {
               ) : (
                 <div className="adThreadView">
                   <div className="adThreadHeader">
-                    <div className="adThreadTitle">{thread.title}</div>
+                    <div className="adThreadTitle">
+                      {spoilerSafe && thread.episodeNumber && !threadSpoilersRevealed
+                        ? `Episode ${thread.episodeNumber} thread`
+                        : thread.title}
+                    </div>
                     <div className="adThreadSub">
                       <span className="adThreadAuthor">
                         {thread.authorDisplayName}
@@ -779,7 +1480,19 @@ export default function AnimeDetails({ onLogout }: Props) {
                     </div>
                   </div>
 
-                  <div className="adThreadBody">{thread.body}</div>
+                  {spoilerSafe && thread.episodeNumber && !threadSpoilersRevealed ? (
+                    <div className="adSpoilerGate">
+                      <div>Episode spoilers hidden.</div>
+                      <button
+                        className="adRevealBtn"
+                        onClick={() => setThreadSpoilersRevealed(true)}
+                      >
+                        Reveal thread
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="adThreadBody">{thread.body}</div>
+                  )}
 
                   <div className="adRepliesHeader">
                     Replies{" "}
@@ -789,7 +1502,11 @@ export default function AnimeDetails({ onLogout }: Props) {
                   </div>
 
                   <div className="adRepliesList">
-                    {thread.comments.length === 0 ? (
+                    {spoilerSafe && thread.episodeNumber && !threadSpoilersRevealed ? (
+                      <div className="adThreadEmpty">
+                        Replies hidden until the thread is revealed.
+                      </div>
+                    ) : thread.comments.length === 0 ? (
                       <div className="adThreadEmpty">
                         No replies yet. Drop one.
                       </div>

@@ -34,6 +34,7 @@ type TrackedShow = {
   seasonYear?: number | null;
   averageScore?: number | null;
   popularity?: number | null;
+  trackingStatus?: string | null;
 };
 
 type MostTrackedShow = Omit<TrackedShow, "id"> & {
@@ -164,6 +165,35 @@ export default function Home({ onLogout }: HomeProps) {
       setTrackingIds((prev) => {
         const next = new Set(prev);
         next.delete(id);
+        return next;
+      });
+    }
+  }
+
+  async function untrackShow(aniListId: number) {
+    if (!trackedIds.has(aniListId)) return;
+
+    setTrackingIds((prev) => new Set(prev).add(aniListId));
+    setError(null);
+
+    try {
+      const res = await fetch(`/api/tracked/${aniListId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+
+      if (!res.ok && res.status !== 404) {
+        throw new Error(await readApiError(res, "Failed to untrack show"));
+      }
+
+      await loadTracked();
+      await loadMostTracked();
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, "Failed to untrack show"));
+    } finally {
+      setTrackingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(aniListId);
         return next;
       });
     }
@@ -368,27 +398,38 @@ export default function Home({ onLogout }: HomeProps) {
                       </div>
 
                       <div className="homeResultActions">
-                        <button
-                          className={[
-                            "homeTrackBtn",
-                            isTracked ? "isTracked" : "",
-                            isTracking ? "isBusy" : "",
-                          ].join(" ")}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            trackShow(x);
-                          }}
-                          disabled={isTracked || isTracking}
-                          title={
-                            isTracked ? "Already tracked" : "Track this show"
-                          }
-                        >
-                          {isTracked
-                            ? "Tracked ✓"
-                            : isTracking
-                              ? "Tracking…"
-                              : "Track"}
-                        </button>
+                        {isTracked ? (
+                          <button
+                            className={[
+                              "homeTrackBtn",
+                              "isTracked",
+                              isTracking ? "isBusy" : "",
+                            ].join(" ")}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              untrackShow(x.aniListId);
+                            }}
+                            disabled={isTracking}
+                            title="Remove from tracked shows"
+                          >
+                            {isTracking ? "Untracking…" : "Untrack"}
+                          </button>
+                        ) : (
+                          <button
+                            className={[
+                              "homeTrackBtn",
+                              isTracking ? "isBusy" : "",
+                            ].join(" ")}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              trackShow(x);
+                            }}
+                            disabled={isTracking}
+                            title="Track this show"
+                          >
+                            {isTracking ? "Tracking…" : "Track"}
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>

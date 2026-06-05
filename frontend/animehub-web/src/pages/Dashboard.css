@@ -246,6 +246,86 @@
   letter-spacing: -0.2px;
 }
 
+.dashToolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.6fr) repeat(6, minmax(120px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.dashSearchInput,
+.dashControl select,
+.dashFieldGrid input,
+.dashFieldGrid select,
+.dashTextField textarea {
+  min-width: 0;
+  width: 100%;
+  border-radius: 12px;
+  border: 3px solid var(--ink);
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 9px 10px;
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.dashControl,
+.dashTextField {
+  display: grid;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 1000;
+  color: var(--ink);
+}
+
+.dashActionRow {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 12px 0;
+}
+
+.dashHiddenInput {
+  display: none;
+}
+
+.dashSegmented {
+  display: inline-flex;
+  border: 3px solid var(--ink);
+  border-radius: 999px;
+  overflow: hidden;
+  box-shadow: 5px 5px 0 var(--ink);
+  background: var(--paper);
+}
+
+.dashSegmented button {
+  border: 0;
+  padding: 9px 12px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 1000;
+  cursor: pointer;
+}
+
+.dashSegmented button.isActive {
+  background: var(--accent2);
+}
+
+.dashNotice {
+  margin: 12px 0;
+  border-color: #2b8a3e;
+}
+
+.dashError {
+  margin: 12px 0;
+  border-color: var(--accent);
+}
+
 /* --- Panels (loading / empty) --- */
 
 .dashPanel {
@@ -271,6 +351,55 @@
   opacity: 0.78;
   margin-top: 6px;
   font-weight: 850;
+}
+
+.dashSectionGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 12px 0 16px;
+}
+
+.dashMiniSection {
+  min-height: 154px;
+}
+
+.dashMiniTitle {
+  font-size: 14px;
+  font-weight: 1000;
+  margin-bottom: 8px;
+}
+
+.dashMiniItem {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 0;
+  border: 0;
+  border-top: 2px dashed rgba(0,0,0,.16);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dashMiniItem span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 950;
+}
+
+.dashMiniItem b,
+.dashMiniEmpty {
+  font-size: 11px;
+  opacity: .76;
+  font-weight: 1000;
+  white-space: nowrap;
 }
 
 /* Primary button: impact burst */
@@ -338,6 +467,12 @@
   margin-top: 10px;
 }
 
+.dashList {
+  display: grid;
+  gap: 12px;
+  margin-top: 10px;
+}
+
 .dashCard {
   text-align: left;
   border-radius: 20px;
@@ -366,6 +501,19 @@
   transform: translateY(1px);
 }
 
+.dashCardList {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+}
+
+.dashOpenArea {
+  display: block;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
 .dashCover {
   height: 140px;
   background: rgba(0,0,0,0.06);
@@ -380,10 +528,46 @@
   gap: 6px;
 }
 
+.dashCardTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
 .dashCardTitle {
   font-weight: 1000;
   letter-spacing: -0.2px;
   line-height: 1.2;
+}
+
+.dashTitleButton {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 1000;
+  line-height: 1.2;
+  text-align: left;
+}
+
+.dashIconBtn {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 999px;
+  border: 3px solid var(--ink);
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+  cursor: pointer;
+  font-weight: 1000;
+}
+
+.dashIconBtn.isFavorite {
+  background: var(--accent2);
 }
 
 .dashMeta {
@@ -402,6 +586,86 @@
   font-size: 12px;
   opacity: 0.78;
   font-weight: 850;
+}
+
+.dashFieldGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.dashFieldGrid label {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 1000;
+}
+
+.dashTextField textarea {
+  min-height: 58px;
+  resize: vertical;
+}
+
+.dashCardActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 2px;
+}
+
+.dashDangerBtn {
+  font-size: 12px;
+  padding: 9px 12px;
+  border-radius: 999px;
+  color: #fff;
+  cursor: pointer;
+  background: rgba(255, 59, 48, 0.88);
+  border: 3px solid var(--ink);
+  box-shadow: 5px 5px 0 var(--ink);
+  font-weight: 950;
+}
+
+.dashStatsPanel {
+  display: grid;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.dashStatsBig {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.dashStatusBars {
+  display: grid;
+  gap: 10px;
+}
+
+.dashStatusBar {
+  display: grid;
+  grid-template-columns: 130px 1fr 36px;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 1000;
+}
+
+.dashStatusBar div {
+  height: 14px;
+  border-radius: 999px;
+  border: 3px solid var(--ink);
+  background: #fff;
+  overflow: hidden;
+}
+
+.dashStatusBar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(135deg, var(--accent2), #ff6a5e);
 }
 
 /* little corner tag */
@@ -424,6 +688,22 @@
 @media (max-width: 520px) {
   .dashH1 {
     font-size: 30px;
+  }
+}
+
+@media (max-width: 980px) {
+  .dashToolbar,
+  .dashSectionGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .dashToolbar,
+  .dashSectionGrid,
+  .dashCardList,
+  .dashFieldGrid {
+    grid-template-columns: 1fr;
   }
 }
 
