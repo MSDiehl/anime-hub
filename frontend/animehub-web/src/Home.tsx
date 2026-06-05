@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { getErrorMessage, readApiError } from "./utils/apiError";
 import "./Home.css";
 
 type HomeProps = {
@@ -21,12 +22,6 @@ type AnimeSearchItem = {
   coverImageUrl?: string | null;
 };
 
-type TrendingCard = {
-  title: string;
-  subtitle: string;
-  cover: string;
-};
-
 type TrackedShow = {
   id: string;
   aniListId: number;
@@ -41,32 +36,9 @@ type TrackedShow = {
   popularity?: number | null;
 };
 
-const dummyMostTracked: TrendingCard[] = [
-  {
-    title: "Frieren: Beyond Journey’s End",
-    subtitle: "Most tracked this week",
-    cover:
-      "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx154587-6m3bQK8cM6oG.jpg",
-  },
-  {
-    title: "Jujutsu Kaisen",
-    subtitle: "Community favorite",
-    cover:
-      "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx101517-8Zp8pWQbHjvT.jpg",
-  },
-  {
-    title: "One Piece",
-    subtitle: "Always trending",
-    cover:
-      "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx21-YCDoj1EkxY8J.jpg",
-  },
-  {
-    title: "Attack on Titan",
-    subtitle: "Top rated",
-    cover:
-      "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx16498-1K7uTzZQ7GJY.jpg",
-  },
-];
+type MostTrackedShow = Omit<TrackedShow, "id"> & {
+  trackedCount: number;
+};
 
 export default function Home({ onLogout }: HomeProps) {
   const [q, setQ] = useState("");
@@ -79,6 +51,9 @@ export default function Home({ onLogout }: HomeProps) {
   // tracked
   const [tracked, setTracked] = useState<TrackedShow[]>([]);
   const [trackingIds, setTrackingIds] = useState<Set<number>>(new Set());
+  const [mostTracked, setMostTracked] = useState<MostTrackedShow[]>([]);
+  const [mostTrackedLoading, setMostTrackedLoading] = useState(true);
+  const [mostTrackedError, setMostTrackedError] = useState<string | null>(null);
 
   const canSearch = useMemo(() => q.trim().length >= 2, [q]);
   const trackedIds = useMemo(
@@ -88,6 +63,7 @@ export default function Home({ onLogout }: HomeProps) {
 
   useEffect(() => {
     loadTracked();
+    loadMostTracked();
   }, []);
 
   async function loadTracked() {
@@ -97,6 +73,24 @@ export default function Home({ onLogout }: HomeProps) {
       setTracked(await res.json());
     } catch {
       // ignore for now
+    }
+  }
+
+  async function loadMostTracked() {
+    setMostTrackedLoading(true);
+    setMostTrackedError(null);
+
+    try {
+      const res = await fetch("/api/tracked/most?limit=4", {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(await readApiError(res));
+      setMostTracked(await res.json());
+    } catch (e: unknown) {
+      setMostTrackedError(getErrorMessage(e, "Failed to load most tracked"));
+      setMostTracked([]);
+    } finally {
+      setMostTrackedLoading(false);
     }
   }
 
@@ -112,10 +106,10 @@ export default function Home({ onLogout }: HomeProps) {
       const res = await fetch(
         `/api/anime/search?q=${encodeURIComponent(query)}&perPage=12`,
       );
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw new Error(await readApiError(res, "Search failed"));
       setItems(await res.json());
-    } catch (e: any) {
-      setError(e?.message ?? "Search failed");
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, "Search failed"));
     } finally {
       setLoading(false);
     }
@@ -159,12 +153,13 @@ export default function Home({ onLogout }: HomeProps) {
 
       // 409 means already tracked (safe to treat as success)
       if (!res.ok && res.status !== 409) {
-        throw new Error(await res.text());
+        throw new Error(await readApiError(res, "Failed to track show"));
       }
 
       await loadTracked();
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to track show");
+      await loadMostTracked();
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, "Failed to track show"));
     } finally {
       setTrackingIds((prev) => {
         const next = new Set(prev);
@@ -268,31 +263,49 @@ export default function Home({ onLogout }: HomeProps) {
                     HOT!
                   </span>
                 </div>
-                <span className="homeMuted">Dummy cards currently.</span>
+                <span className="homeMuted">
+                  {mostTrackedLoading
+                    ? "Loading community picks."
+                    : "Based on tracked shows."}
+                </span>
               </div>
 
               <div className="homeCardGrid">
-                {dummyMostTracked.map((c) => (
-                  <div key={c.title} className="homeCard">
-                    <div
-                      className="homeCardCover"
-                      style={{ backgroundImage: `url(${c.cover})` }}
-                    />
-                    <div className="homeCardBody">
-                      <div className="homeCardTitle">{c.title}</div>
-                      <div className="homeCardSub">{c.subtitle}</div>
-                      <button
-                        className="homeCardBtn"
-                        onClick={() => {
-                          setQ(c.title);
-                          // runSearch(); // optional
-                        }}
-                      >
-                        Search
-                      </button>
-                    </div>
+                {mostTrackedLoading ? (
+                  <div className="homeEmpty">Loading most tracked…</div>
+                ) : mostTrackedError ? (
+                  <div className="homeError">{mostTrackedError}</div>
+                ) : mostTracked.length === 0 ? (
+                  <div className="homeEmpty">
+                    No tracked shows yet. Track one to start the list.
                   </div>
-                ))}
+                ) : (
+                  mostTracked.map((show) => (
+                    <div key={show.aniListId} className="homeCard">
+                      <div
+                        className="homeCardCover"
+                        style={{
+                          backgroundImage: show.coverImageUrl
+                            ? `url(${show.coverImageUrl})`
+                            : undefined,
+                        }}
+                      />
+                      <div className="homeCardBody">
+                        <div className="homeCardTitle">{show.title}</div>
+                        <div className="homeCardSub">
+                          {show.trackedCount}{" "}
+                          {show.trackedCount === 1 ? "tracker" : "trackers"}
+                        </div>
+                        <button
+                          className="homeCardBtn"
+                          onClick={() => navigate(`/anime/${show.aniListId}`)}
+                        >
+                          View
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           )}

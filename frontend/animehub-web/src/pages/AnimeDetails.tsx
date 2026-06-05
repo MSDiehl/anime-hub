@@ -9,6 +9,8 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
+import { getErrorMessage, readApiError } from "../utils/apiError";
+import { sanitizeAniListHtml } from "../utils/sanitizeAniListHtml";
 import "./AnimeDetails.css";
 
 type RelatedSeason = {
@@ -79,6 +81,8 @@ export default function AnimeDetails({ onLogout }: Props) {
 
   const [data, setData] = useState<AnimeDetailsDto | null>(null);
   const [loading, setLoading] = useState(true);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
+  const [detailsReloadKey, setDetailsReloadKey] = useState(0);
 
   // discussion state
   const [discEpisode, setDiscEpisode] = useState<number | null>(null); // null = general
@@ -122,6 +126,11 @@ export default function AnimeDetails({ onLogout }: Props) {
     }));
   }, [data]);
 
+  const sanitizedDescription = useMemo(
+    () => sanitizeAniListHtml(data?.description),
+    [data?.description],
+  );
+
   // v1 episodes: generate from episode count
   const episodes = useMemo(() => {
     const n = data?.episodes ?? 0;
@@ -138,24 +147,42 @@ export default function AnimeDetails({ onLogout }: Props) {
 
     async function load() {
       setLoading(true);
+      setDetailsError(null);
+      setData(null);
+
       try {
         const res = await fetch(`/api/anime/${activeId}`, {
           credentials: "include",
         });
-        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+        if (!res.ok) {
+          throw new Error(
+            await readApiError(res, "Failed to load anime details"),
+          );
+        }
         const json = (await res.json()) as AnimeDetailsDto;
         if (!cancelled) setData(json);
+      } catch (e: unknown) {
+        if (!cancelled) {
+          setDetailsError(getErrorMessage(e, "Failed to load anime details"));
+          setData(null);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
 
-    if (Number.isFinite(activeId) && activeId > 0) load();
+    if (Number.isFinite(activeId) && activeId > 0) {
+      load();
+    } else {
+      setLoading(false);
+      setData(null);
+      setDetailsError("Invalid anime id.");
+    }
 
     return () => {
       cancelled = true;
     };
-  }, [activeId]);
+  }, [activeId, detailsReloadKey]);
 
   async function loadThreads() {
     setThreadsLoading(true);
@@ -166,13 +193,12 @@ export default function AnimeDetails({ onLogout }: Props) {
         credentials: "include",
       });
       if (!res.ok) {
-        const t = await res.text().catch(() => "");
-        throw new Error(t || `${res.status} ${res.statusText}`);
+        throw new Error(await readApiError(res, "Failed to load discussions"));
       }
       const json = (await res.json()) as ThreadSummary[];
       setThreads(json);
-    } catch (e: any) {
-      setThreadsErr(e?.message ?? "Failed to load discussions");
+    } catch (e: unknown) {
+      setThreadsErr(getErrorMessage(e, "Failed to load discussions"));
       setThreads([]);
     } finally {
       setThreadsLoading(false);
@@ -188,13 +214,12 @@ export default function AnimeDetails({ onLogout }: Props) {
         credentials: "include",
       });
       if (!res.ok) {
-        const t = await res.text().catch(() => "");
-        throw new Error(t || `${res.status} ${res.statusText}`);
+        throw new Error(await readApiError(res, "Failed to load thread"));
       }
       const json = (await res.json()) as ThreadDetail;
       setThread(json);
-    } catch (e: any) {
-      setThreadErr(e?.message ?? "Failed to load thread");
+    } catch (e: unknown) {
+      setThreadErr(getErrorMessage(e, "Failed to load thread"));
     } finally {
       setThreadLoading(false);
     }
@@ -227,15 +252,14 @@ export default function AnimeDetails({ onLogout }: Props) {
       });
 
       if (!res.ok) {
-        const t = await res.text().catch(() => "");
-        throw new Error(t || `${res.status} ${res.statusText}`);
+        throw new Error(await readApiError(res, "Failed to create thread"));
       }
 
       setNewTitle("");
       setNewBody("");
       await loadThreads();
-    } catch (e: any) {
-      setThreadsErr(e?.message ?? "Failed to create thread");
+    } catch (e: unknown) {
+      setThreadsErr(getErrorMessage(e, "Failed to create thread"));
     } finally {
       setPostingThread(false);
     }
@@ -258,15 +282,14 @@ export default function AnimeDetails({ onLogout }: Props) {
       );
 
       if (!res.ok) {
-        const t = await res.text().catch(() => "");
-        throw new Error(t || `${res.status} ${res.statusText}`);
+        throw new Error(await readApiError(res, "Failed to post reply"));
       }
 
       setReplyBody("");
       await loadThread(selectedThreadId);
       await loadThreads();
-    } catch (e: any) {
-      setThreadErr(e?.message ?? "Failed to post reply");
+    } catch (e: unknown) {
+      setThreadErr(getErrorMessage(e, "Failed to post reply"));
     } finally {
       setPostingReply(false);
     }
@@ -282,6 +305,29 @@ export default function AnimeDetails({ onLogout }: Props) {
         </div>
         <div className="adLoadingWrap">
           <div className="adLoadingCard mangaPanel">Loading…</div>
+        </div>
+      </div>
+    );
+
+  if (detailsError)
+    return (
+      <div className="adPage">
+        <div className="adBg" aria-hidden="true">
+          <div className="adSpeedLines" />
+          <div className="adHalftone" />
+          <div className="adInkWash" />
+        </div>
+        <div className="adLoadingWrap">
+          <div className="adLoadingCard mangaPanel">
+            <div className="adStateTitle">Couldn’t load anime details</div>
+            <div className="adStateText">{detailsError}</div>
+            <button
+              className="adPillBtn adStateAction"
+              onClick={() => setDetailsReloadKey((value) => value + 1)}
+            >
+              Retry
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -443,7 +489,7 @@ export default function AnimeDetails({ onLogout }: Props) {
 
             <div
               className="adDesc"
-              dangerouslySetInnerHTML={{ __html: data.description ?? "" }}
+              dangerouslySetInnerHTML={{ __html: sanitizedDescription }}
             />
           </section>
 

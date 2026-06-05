@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { getErrorMessage, readApiError } from "../utils/apiError";
 import "./Dashboard.css";
 
 type Props = { onLogout: () => void | Promise<void> };
@@ -22,6 +23,7 @@ export default function Dashboard({ onLogout }: Props) {
   const navigate = useNavigate();
   const [items, setItems] = useState<TrackedShow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     load();
@@ -29,10 +31,14 @@ export default function Dashboard({ onLogout }: Props) {
 
   async function load() {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch("/api/tracked", { credentials: "include" });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw new Error(await readApiError(res));
       setItems(await res.json());
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, "Failed to load tracked shows"));
+      setItems([]);
     } finally {
       setLoading(false);
     }
@@ -113,6 +119,8 @@ export default function Dashboard({ onLogout }: Props) {
 
         {loading ? (
           <div className="dashPanel">Loading…</div>
+        ) : error ? (
+          <div className="dashPanel">{error}</div>
         ) : items.length === 0 ? (
           <div className="dashPanel dashEmptyPanel">
             <div className="dashEmptyTitle">No tracked shows yet</div>

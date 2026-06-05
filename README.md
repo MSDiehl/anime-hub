@@ -1,65 +1,127 @@
-# AnimeHub (V1)
+# AnimeHub
 
-AnimeHub is a centralized hub for discovering anime, tracking what you’re watching, viewing anime details, and checking an upcoming release schedule — all with a clean, modern UI.
+AnimeHub is a full-stack anime tracker built with ASP.NET Core, Entity Framework Core, PostgreSQL, and a React/Vite frontend. It uses AniList GraphQL for anime search, details, and airing schedules.
 
-V1 focuses on:
+## Features
 
-- Searching anime (powered by AniList)
-- Tracking anime per-user (login required)
-- A detailed anime page with stats + placeholder trend graphs
-- A weekly release schedule with a “Tracked only” filter
-- Discussions attached to each anime (general + episode scope)
+- Cookie-based registration, login, logout, and current-user lookup.
+- AniList search and anime detail pages.
+- Per-user track and untrack endpoints.
+- Community "Most tracked" cards backed by tracked-show data.
+- Weekly release schedule with a tracked-only filter.
+- Anime and episode-scoped discussion threads.
 
----
+## Prerequisites
 
-## Features (V1)
+- .NET 10 SDK
+- Docker Desktop
+- Node.js 24 or newer
+- pnpm 10 or newer
 
-### Authentication (per-user)
+## Configuration
 
-- Create an account
-- Sign in / sign out
-- User-specific tracking data (your tracked list is not shared with other accounts)
+Copy the example env file before local setup:
 
-### Search + Track
+```bash
+cp .env.example .env
+```
 
-- Search anime by title (AniList)
-- Track/untrack an anime
-- Tracked status persists in the database
+Important values:
 
-### Anime Details Page
+- `POSTGRES_PORT`: local PostgreSQL port exposed by Docker, default `5432`.
+- `ConnectionStrings__Default`: backend PostgreSQL connection string.
+- `ExternalApis__AniList__BaseUrl`: AniList GraphQL endpoint, default `https://graphql.anilist.co`.
+- `ASPNETCORE_URLS`: API URLs, default `https://localhost:7162;http://localhost:5162`.
+- `VITE_DEV_PORT`: frontend dev server port, default `5173`.
+- `VITE_API_TARGET`: Vite proxy target for `/api`, default `https://127.0.0.1:7162`.
 
-- Banner art + metadata (format/status/episodes/season/etc.)
-- Overview/description section
-- Trend graphs (placeholder for V1 — real snapshots/metrics planned)
-- Episode section (foundation for per-episode ratings in future)
-- **Discussion tab**: start threads + read threads (scoped to the anime, with episode scoping available)
+ASP.NET also reads `backend/AnimeHub.Api/appsettings.Development.json` during local development.
 
-### Release Schedule
+## Start Dependencies
 
-- Week view for upcoming episodes (AniList airing schedule)
-- Navigation to move the date range
-- Toggle: **Tracked only** (filters schedule to just shows you track)
+From the repository root:
 
-### Forums (Global)
+```bash
+docker compose up -d
+```
 
-- The nav button routes to a “Coming soon” page in V1
-- Planned for a future release as a global feed (Reddit-style) built on top of anime/episode discussions
+This starts PostgreSQL on `localhost:5432` by default.
 
----
+## Backend Setup
 
-## Tech Stack
+Restore packages and apply migrations:
 
-### Frontend
+```bash
+cd backend
+dotnet restore AnimeHub.slnx
+dotnet ef database update --project AnimeHub.Infrastructure --startup-project AnimeHub.Api
+```
 
-- React + TypeScript (Vite)
-- CSS (custom UI theme)
+If `dotnet ef` is not installed:
 
-### Backend
+```bash
+dotnet tool install --global dotnet-ef
+```
 
-- ASP.NET Core Web API (.NET)
-- Entity Framework Core (database persistence)
-- ASP.NET Identity (cookie auth)
+Run the API:
 
-### External Data
+```bash
+dotnet run --project AnimeHub.Api
+```
 
-- AniList GraphQL API (search, anime details, schedules)
+The API defaults to:
+
+- HTTPS: `https://localhost:7162`
+- HTTP: `http://localhost:5162`
+- Swagger: `https://localhost:7162/swagger`
+
+## Frontend Setup
+
+Install and run the Vite app:
+
+```bash
+cd frontend/animehub-web
+pnpm install
+pnpm dev
+```
+
+Open `http://localhost:5173`.
+
+## Tests And Checks
+
+Backend:
+
+```bash
+cd backend
+dotnet test AnimeHub.slnx
+```
+
+Frontend:
+
+```bash
+cd frontend/animehub-web
+pnpm lint
+pnpm test
+pnpm build
+```
+
+## API Notes
+
+- `POST /api/tracked` tracks an anime for the signed-in user.
+- `DELETE /api/tracked/{aniListId}` untracks an anime for the signed-in user.
+- `GET /api/tracked` returns the signed-in user's tracked list.
+- `GET /api/tracked/most?limit=4` returns the most tracked anime across users.
+
+Validation and upstream failures return a JSON error object:
+
+```json
+{
+    "code": "validation_error",
+    "message": "Title is required.",
+    "errors": null
+}
+```
+
+## CI
+
+GitHub Actions runs backend restore/build/test and frontend install/lint/test/build on pushes to `main` and pull requests.

@@ -3,11 +3,11 @@ services:
     image: postgres:16
     container_name: animehub_db
     environment:
-      POSTGRES_USER: animehub
-      POSTGRES_PASSWORD: animehub
-      POSTGRES_DB: animehub
+      POSTGRES_USER: ${POSTGRES_USER:-animehub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-animehub}
+      POSTGRES_DB: ${POSTGRES_DB:-animehub}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - animehub_pg:/var/lib/postgresql/data
 

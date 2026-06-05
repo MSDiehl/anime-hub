@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { getErrorMessage, readApiError } from "../utils/apiError";
 import "./Schedule.css";
 
 type Props = { onLogout: () => void | Promise<void> };
@@ -83,10 +84,10 @@ export default function Schedule({ onLogout }: Props) {
       )}&days=7&trackedOnly=${trackedOnly ? "true" : "false"}`;
 
       const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw new Error(await readApiError(res));
       setItems(await res.json());
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to load schedule");
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, "Failed to load schedule"));
       setItems([]);
     } finally {
       setLoading(false);

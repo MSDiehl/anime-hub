@@ -1,9 +1,6 @@
 using System.Net.Http.Headers;
-using AnimeHub.Infrastructure.Data;
-using Microsoft.EntityFrameworkCore;
 using AnimeHub.Infrastructure.Auth;
 using AnimeHub.Infrastructure.Data;
-using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
@@ -19,10 +16,15 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("DevCors", policy =>
     {
+        var origins = builder.Configuration
+            .GetSection("Cors:AllowedOrigins")
+            .Get<string[]>() ?? ["http://localhost:5173"];
+
         policy
-            .WithOrigins("http://localhost:5173") // Vite default
+            .WithOrigins(origins)
             .AllowAnyHeader()
-            .AllowAnyMethod();
+            .AllowAnyMethod()
+            .AllowCredentials();
     });
 });
 
@@ -39,21 +41,6 @@ builder.Services.AddDbContext<AppDbContext>(opt =>
     opt.UseNpgsql(cs);
 });
 
-builder.Services.AddIdentityCore<ApplicationUser>(options =>
-{
-    options.User.RequireUniqueEmail = true;
-
-    // Password rules (adjust later if you want stricter)
-    options.Password.RequiredLength = 6;
-    options.Password.RequireNonAlphanumeric = false;
-    options.Password.RequireUppercase = false;
-    options.Password.RequireLowercase = false;
-    options.Password.RequireDigit = false;
-})
-.AddRoles<IdentityRole<Guid>>()
-.AddEntityFrameworkStores<AppDbContext>()
-.AddSignInManager();
-
 builder.Services
     .AddIdentity<ApplicationUser, IdentityRole<Guid>>(options =>
     {
@@ -68,7 +55,6 @@ builder.Services
     .AddEntityFrameworkStores<AppDbContext>()
     .AddDefaultTokenProviders();
 
-builder.Services.AddAuthentication();
 builder.Services.AddAuthorization();
 
 // cookie settings for dev
@@ -81,7 +67,6 @@ builder.Services.ConfigureApplicationCookie(options =>
         ? CookieSecurePolicy.None
         : CookieSecurePolicy.Always;
 
-    // prevent redirects for API calls
     options.Events.OnRedirectToLogin = ctx =>
     {
         ctx.Response.StatusCode = 401;
@@ -93,8 +78,6 @@ builder.Services.ConfigureApplicationCookie(options =>
         return Task.CompletedTask;
     };
 });
-
-builder.Services.AddAuthorization();
 
 var app = builder.Build();
 

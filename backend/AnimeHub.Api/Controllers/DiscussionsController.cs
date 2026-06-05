@@ -1,9 +1,10 @@
+using System.Security.Claims;
+using AnimeHub.Api.Models;
 using AnimeHub.Domain.Entities;
 using AnimeHub.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Security.Claims;
 
 namespace AnimeHub.Api.Controllers;
 
@@ -25,7 +26,7 @@ public class DiscussionsController : ControllerBase
         [FromRoute] int aniListId,
         [FromQuery] int? episode = null)
     {
-        if (aniListId <= 0) return BadRequest("aniListId is required.");
+        if (aniListId <= 0) return BadRequest(ApiError.Validation("aniListId is required."));
 
         var query = _db.DiscussionThreads.AsNoTracking()
             .Where(t => t.AniListId == aniListId && t.EpisodeNumber == episode)
@@ -67,16 +68,16 @@ public class DiscussionsController : ControllerBase
         [FromQuery] int? episode,
         [FromBody] CreateThreadRequest req)
     {
-        if (aniListId <= 0) return BadRequest("aniListId is required.");
-        if (episode is <= 0) return BadRequest("episode must be >= 1 when provided.");
-        if (string.IsNullOrWhiteSpace(req.Title)) return BadRequest("Title is required.");
-        if (string.IsNullOrWhiteSpace(req.Body)) return BadRequest("Body is required.");
+        if (aniListId <= 0) return BadRequest(ApiError.Validation("aniListId is required."));
+        if (episode is <= 0) return BadRequest(ApiError.Validation("episode must be >= 1 when provided."));
+        if (string.IsNullOrWhiteSpace(req.Title)) return BadRequest(ApiError.Validation("Title is required."));
+        if (string.IsNullOrWhiteSpace(req.Body)) return BadRequest(ApiError.Validation("Body is required."));
 
         var title = req.Title.Trim();
         var body = req.Body.Trim();
 
-        if (title.Length > 200) return BadRequest("Title too long (max 200).");
-        if (body.Length > 5000) return BadRequest("Body too long (max 5000).");
+        if (title.Length > 200) return BadRequest(ApiError.Validation("Title too long (max 200)."));
+        if (body.Length > 5000) return BadRequest(ApiError.Validation("Body too long (max 5000)."));
 
         var thread = new DiscussionThread
         {
@@ -113,7 +114,7 @@ public class DiscussionsController : ControllerBase
             })
             .FirstOrDefaultAsync();
 
-        if (thread == null) return NotFound("Thread not found.");
+        if (thread == null) return NotFound(ApiError.NotFound("Thread not found."));
 
         // author name
         var author = await _db.Users.AsNoTracking()
@@ -157,13 +158,13 @@ public class DiscussionsController : ControllerBase
     [HttpPost("thread/{threadId:guid}/comments")]
     public async Task<ActionResult> AddComment([FromRoute] Guid threadId, [FromBody] AddCommentRequest req)
     {
-        if (string.IsNullOrWhiteSpace(req.Body)) return BadRequest("Body is required.");
+        if (string.IsNullOrWhiteSpace(req.Body)) return BadRequest(ApiError.Validation("Body is required."));
 
         var body = req.Body.Trim();
-        if (body.Length > 3000) return BadRequest("Comment too long (max 3000).");
+        if (body.Length > 3000) return BadRequest(ApiError.Validation("Comment too long (max 3000)."));
 
         var exists = await _db.DiscussionThreads.AnyAsync(t => t.Id == threadId);
-        if (!exists) return NotFound("Thread not found.");
+        if (!exists) return NotFound(ApiError.NotFound("Thread not found."));
 
         var comment = new DiscussionComment
         {

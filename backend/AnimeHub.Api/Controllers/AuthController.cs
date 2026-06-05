@@ -1,3 +1,4 @@
+using AnimeHub.Api.Models;
 using AnimeHub.Infrastructure.Auth;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -22,7 +23,7 @@ public class AuthController : ControllerBase
     public async Task<ActionResult> Register([FromBody] RegisterRequest req)
     {
         if (string.IsNullOrWhiteSpace(req.Email) || string.IsNullOrWhiteSpace(req.Password))
-            return BadRequest("Email and password are required.");
+            return BadRequest(ApiError.Validation("Email and password are required."));
 
         var user = new ApplicationUser
         {
@@ -34,7 +35,13 @@ public class AuthController : ControllerBase
 
         var result = await _users.CreateAsync(user, req.Password);
         if (!result.Succeeded)
-            return BadRequest(result.Errors.Select(e => e.Description));
+        {
+            var errors = result.Errors
+                .GroupBy(e => e.Code)
+                .ToDictionary(g => g.Key, g => g.Select(e => e.Description).ToArray());
+
+            return BadRequest(ApiError.Validation("Registration failed.", errors));
+        }
 
         await _signIn.SignInAsync(user, isPersistent: true);
         return Ok(new { user.Id, user.Email, user.DisplayName });
@@ -44,13 +51,13 @@ public class AuthController : ControllerBase
     public async Task<ActionResult> Login([FromBody] LoginRequest req)
     {
         if (string.IsNullOrWhiteSpace(req.Email) || string.IsNullOrWhiteSpace(req.Password))
-            return BadRequest("Email and password are required.");
+            return BadRequest(ApiError.Validation("Email and password are required."));
 
         var user = await _users.FindByEmailAsync(req.Email.Trim().ToLowerInvariant());
-        if (user == null) return Unauthorized("Invalid credentials.");
+        if (user == null) return Unauthorized(ApiError.Unauthorized("Invalid credentials."));
 
         var result = await _signIn.CheckPasswordSignInAsync(user, req.Password, lockoutOnFailure: false);
-        if (!result.Succeeded) return Unauthorized("Invalid credentials.");
+        if (!result.Succeeded) return Unauthorized(ApiError.Unauthorized("Invalid credentials."));
 
         await _signIn.SignInAsync(user, isPersistent: true);
         return Ok(new { user.Id, user.Email, user.DisplayName });

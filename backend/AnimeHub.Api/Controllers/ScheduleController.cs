@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text.Json;
+using AnimeHub.Api.Models;
 using AnimeHub.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -13,8 +14,6 @@ namespace AnimeHub.Api.Controllers;
 [Route("api/schedule")]
 public class ScheduleController : ControllerBase
 {
-    private const string AniListEndpoint = "https://graphql.anilist.co";
-
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly AppDbContext _db;
     private readonly ILogger<ScheduleController> _logger;
@@ -141,7 +140,7 @@ query ($page:Int,$perPage:Int,$start:Int,$end:Int,$mediaIds:[Int]) {
 
         for (var attempt = 1; attempt <= 2; attempt++)
         {
-            resp = await client.PostAsJsonAsync(AniListEndpoint, payload);
+            resp = await client.PostAsJsonAsync("", payload);
             body = await resp.Content.ReadAsStringAsync();
 
             if ((int)resp.StatusCode < 500) break; // not an upstream 5xx
@@ -150,13 +149,13 @@ query ($page:Int,$perPage:Int,$start:Int,$end:Int,$mediaIds:[Int]) {
         }
 
         if (resp == null)
-            return StatusCode(502, "Upstream schedule provider did not respond.");
+            return StatusCode(502, ApiError.Upstream("Upstream schedule provider did not respond."));
 
         if (!resp.IsSuccessStatusCode)
         {
             _logger.LogWarning("AniList schedule failed: {Status} {Body}", resp.StatusCode, body);
             // Return 502 so the frontend knows this is upstream, not your API logic
-            return StatusCode(502, body);
+            return StatusCode(502, ApiError.Upstream("AniList schedule request failed."));
         }
 
         var parsed = JsonSerializer.Deserialize<AniListScheduleResponse>(body, new JsonSerializerOptions

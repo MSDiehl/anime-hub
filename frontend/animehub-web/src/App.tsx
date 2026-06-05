@@ -5,6 +5,7 @@ import Home from "./Home";
 import AnimeDetails from "./pages/AnimeDetails";
 import Dashboard from "./pages/Dashboard";
 import Schedule from "./pages/Schedule";
+import { getErrorMessage, readApiError } from "./utils/apiError";
 import "./App.css";
 
 type Me = { id?: string; email?: string };
@@ -223,20 +224,12 @@ function AuthPage({ onAuthed }: { onAuthed: () => Promise<void> | void }) {
       });
 
       if (!res.ok) {
-        let msg = "Request failed";
-        const ct = res.headers.get("content-type") || "";
-        if (ct.includes("application/json")) {
-          const data = await res.json().catch(() => null);
-          msg = typeof data === "string" ? data : JSON.stringify(data);
-        } else {
-          msg = `${res.status} ${res.statusText}`;
-        }
-        throw new Error(msg);
+        throw new Error(await readApiError(res, "Auth failed"));
       }
 
       await onAuthed();
-    } catch (e: any) {
-      setError(e?.message ?? "Auth failed");
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, "Auth failed"));
     } finally {
       setBusy(false);
     }
@@ -399,7 +392,7 @@ function AuthPage({ onAuthed }: { onAuthed: () => Promise<void> | void }) {
 
           <div className="authFooter" aria-hidden="true">
             <span className="authFooterPill">
-              Fun Fact: One Piece is the greates anime ever.
+              Fun Fact: One Piece is the greatest anime ever.
             </span>
           </div>
         </div>

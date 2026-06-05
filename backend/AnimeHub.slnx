@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="AnimeHub.Api/AnimeHub.Api.csproj" />
+  <Project Path="AnimeHub.Api.Tests/AnimeHub.Api.Tests.csproj" />
   <Project Path="AnimeHub.Domain/AnimeHub.Domain.csproj" />
   <Project Path="AnimeHub.Infrastructure/AnimeHub.Infrastructure.csproj" />
 </Solution>
