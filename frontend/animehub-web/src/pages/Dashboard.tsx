@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
+import { csrfFetch } from "../api/csrf";
+import AppNav from "../components/AppNav";
+import { CoverFallback, EmptyState, SkeletonBlock, useConfirm, useToast } from "../components/Feedback";
+import { StarIcon, TrashIcon } from "../components/Icons";
 import { getErrorMessage, readApiError } from "../utils/apiError";
 import "./Dashboard.css";
 
@@ -86,6 +90,8 @@ function unique(values: Array<string | null | undefined>) {
 export default function Dashboard({ onLogout }: Props) {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const { confirm } = useConfirm();
+  const { pushToast } = useToast();
 
   const [items, setItems] = useState<TrackedShow[]>([]);
   const [airingToday, setAiringToday] = useState<ScheduleItem[]>([]);
@@ -112,7 +118,7 @@ export default function Dashboard({ onLogout }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/tracked", { credentials: "include" });
+      const res = await csrfFetch("/api/tracked", { credentials: "include" });
       if (!res.ok) throw new Error(await readApiError(res));
       setItems(await res.json());
     } catch (e: unknown) {
@@ -126,7 +132,7 @@ export default function Dashboard({ onLogout }: Props) {
   async function loadAiringToday() {
     setAiringLoading(true);
     try {
-      const res = await fetch(
+      const res = await csrfFetch(
         `/api/schedule/week?start=${encodeURIComponent(todayIso())}&days=1&trackedOnly=true`,
         { credentials: "include" },
       );
@@ -141,8 +147,17 @@ export default function Dashboard({ onLogout }: Props) {
 
   async function patchTracked(aniListId: number, patch: Partial<TrackedShow>) {
     setNotice(null);
+    const previousItems = items;
+    setItems((prev) =>
+      prev.map((item) =>
+        item.aniListId === aniListId
+          ? { ...item, ...patch, updatedUtc: new Date().toISOString() }
+          : item,
+      ),
+    );
+
     try {
-      const res = await fetch(`/api/tracked/${aniListId}`, {
+      const res = await csrfFetch(`/api/tracked/${aniListId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -152,29 +167,45 @@ export default function Dashboard({ onLogout }: Props) {
       const updated = (await res.json()) as TrackedShow;
       setItems((prev) => prev.map((item) => (item.aniListId === aniListId ? updated : item)));
     } catch (e: unknown) {
+      setItems(previousItems);
       setError(getErrorMessage(e, "Failed to update show"));
+      pushToast("Could not save that tracking change.", "error");
     }
   }
 
   async function untrack(aniListId: number) {
+    const item = items.find((show) => show.aniListId === aniListId);
+    const ok = await confirm({
+      title: "Untrack show?",
+      message: `Remove ${item?.title ?? "this show"} from your tracked list?`,
+      confirmLabel: "Untrack",
+      danger: true,
+    });
+    if (!ok) return;
+
     setNotice(null);
+    const previousItems = items;
+    setItems((prev) => prev.filter((show) => show.aniListId !== aniListId));
+
     try {
-      const res = await fetch(`/api/tracked/${aniListId}`, {
+      const res = await csrfFetch(`/api/tracked/${aniListId}`, {
         method: "DELETE",
         credentials: "include",
       });
       if (!res.ok) throw new Error(await readApiError(res, "Failed to untrack show"));
-      setItems((prev) => prev.filter((item) => item.aniListId !== aniListId));
       setNotice("Show removed from your tracked list.");
+      pushToast(`${item?.title ?? "Show"} removed.`, "success");
     } catch (e: unknown) {
+      setItems(previousItems);
       setError(getErrorMessage(e, "Failed to untrack show"));
+      pushToast("Could not untrack that show.", "error");
     }
   }
 
   async function exportTracked(format: "json" | "csv") {
     setNotice(null);
     try {
-      const res = await fetch(`/api/tracked/export?format=${format}`, {
+      const res = await csrfFetch(`/api/tracked/export?format=${format}`, {
         credentials: "include",
       });
       if (!res.ok) throw new Error(await readApiError(res, "Export failed"));
@@ -186,6 +217,7 @@ export default function Dashboard({ onLogout }: Props) {
       link.download = `animehub-tracked.${format}`;
       link.click();
       URL.revokeObjectURL(url);
+      pushToast(`Exported tracked list as ${format.toUpperCase()}.`, "success");
     } catch (e: unknown) {
       setError(getErrorMessage(e, "Export failed"));
     }
@@ -204,7 +236,7 @@ export default function Dashboard({ onLogout }: Props) {
         ? parseTrackedCsv(text)
         : JSON.parse(text);
 
-      const res = await fetch("/api/tracked/import", {
+      const res = await csrfFetch("/api/tracked/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -213,6 +245,7 @@ export default function Dashboard({ onLogout }: Props) {
       if (!res.ok) throw new Error(await readApiError(res, "Import failed"));
       const result = await res.json();
       setNotice(`Imported ${result.created} new and updated ${result.updated} shows.`);
+      pushToast("Import complete.", "success");
       await load();
     } catch (e: unknown) {
       setError(getErrorMessage(e, "Import failed"));
@@ -294,29 +327,7 @@ export default function Dashboard({ onLogout }: Props) {
         <div className="dashInkWash" />
       </div>
 
-      <header className="dashTopBar">
-        <div className="dashBrand" onClick={() => navigate("/dashboard")}>
-          AnimeHub
-        </div>
-
-        <div className="dashTopBarRight">
-          <button className="dashPillBtn isActive" onClick={() => navigate("/dashboard")}>
-            Dashboard
-          </button>
-          <button className="dashPillBtn" onClick={() => navigate("/search")}>
-            Search
-          </button>
-          <button className="dashPillBtn" disabled title="Coming soon">
-            Forums
-          </button>
-          <button className="dashPillBtn" onClick={() => navigate("/schedule")}>
-            Schedule
-          </button>
-          <button className="dashLogoutBtn" onClick={onLogout}>
-            Logout
-          </button>
-        </div>
-      </header>
+      <AppNav active="dashboard" onLogout={onLogout} />
 
       <main className="dashMain">
         <div className="dashHeaderRow">
@@ -410,15 +421,17 @@ export default function Dashboard({ onLogout }: Props) {
         {error && <div className="dashPanel dashError">{error}</div>}
 
         {loading ? (
-          <div className="dashPanel">Loading…</div>
+          <div className="dashPanel dashSkeletonPanel">
+            <SkeletonBlock rows={4} />
+          </div>
         ) : items.length === 0 ? (
           <div className="dashPanel dashEmptyPanel">
-            <div className="dashEmptyTitle">No tracked shows yet</div>
-            <div className="dashEmptySub">Go to Search and track your first anime to see it here.</div>
-            <button className="dashPrimaryBtn" onClick={() => navigate("/search")}>
-              <span className="dashPrimaryBurst" aria-hidden="true" />
-              <span className="dashPrimaryText">Go to Search</span>
-            </button>
+            <EmptyState
+              actionLabel="Go to Search"
+              message="Track your first anime to unlock lists, stats, favorites, and airing reminders."
+              onAction={() => navigate("/search")}
+              title="No tracked shows yet"
+            />
           </div>
         ) : (
           <>
@@ -427,6 +440,8 @@ export default function Dashboard({ onLogout }: Props) {
               airingToday={airingToday}
               airingLoading={airingLoading}
               onOpen={(id) => navigate(`/anime/${id}`)}
+              onSchedule={() => navigate("/schedule")}
+              onSearch={() => navigate("/search")}
             />
 
             {viewMode === "stats" ? (
@@ -446,7 +461,23 @@ export default function Dashboard({ onLogout }: Props) {
               </div>
             )}
 
-            {filtered.length === 0 && <div className="dashPanel">No shows match those filters.</div>}
+            {filtered.length === 0 && (
+              <div className="dashPanel">
+                <EmptyState
+                  actionLabel="Reset filters"
+                  message="Clear the current filters to see your full tracked list again."
+                  onAction={() => {
+                    setSearch("");
+                    setStatusFilter("All");
+                    setFormatFilter("All");
+                    setGenreFilter("All");
+                    setSeasonFilter("All");
+                    setYearFilter("All");
+                  }}
+                  title="No shows match those filters"
+                />
+              </div>
+            )}
           </>
         )}
       </main>
@@ -501,6 +532,8 @@ function DashboardSections({
   airingToday,
   airingLoading,
   onOpen,
+  onSchedule,
+  onSearch,
 }: {
   sections: {
     recentlyTracked: TrackedShow[];
@@ -510,16 +543,23 @@ function DashboardSections({
   airingToday: ScheduleItem[];
   airingLoading: boolean;
   onOpen: (aniListId: number) => void;
+  onSchedule: () => void;
+  onSearch: () => void;
 }) {
   return (
     <div className="dashSectionGrid">
-      <MiniSection title="Continue watching" items={sections.continueWatching} onOpen={onOpen} />
+      <MiniSection title="Continue watching" items={sections.continueWatching} onOpen={onOpen} onEmptyAction={onSearch} />
       <section className="dashMiniSection dashPanel">
         <div className="dashMiniTitle">Airing today</div>
         {airingLoading ? (
-          <div className="dashMiniEmpty">Loading…</div>
+          <SkeletonBlock rows={3} />
         ) : airingToday.length === 0 ? (
-          <div className="dashMiniEmpty">No tracked episodes today.</div>
+          <EmptyState
+            actionLabel="Open schedule"
+            message="Use the schedule page to browse upcoming releases."
+            onAction={onSchedule}
+            title="No tracked episodes today"
+          />
         ) : (
           airingToday.slice(0, 4).map((item) => (
             <button key={`${item.aniListId}-${item.episode}`} className="dashMiniItem" onClick={() => onOpen(item.aniListId)}>
@@ -529,8 +569,8 @@ function DashboardSections({
           ))
         )}
       </section>
-      <MiniSection title="Recently tracked" items={sections.recentlyTracked} onOpen={onOpen} />
-      <MiniSection title="Favorites" items={sections.favorites} onOpen={onOpen} />
+      <MiniSection title="Recently tracked" items={sections.recentlyTracked} onOpen={onOpen} onEmptyAction={onSearch} />
+      <MiniSection title="Favorites" items={sections.favorites} onOpen={onOpen} onEmptyAction={onSearch} />
     </div>
   );
 }
@@ -539,16 +579,23 @@ function MiniSection({
   title,
   items,
   onOpen,
+  onEmptyAction,
 }: {
   title: string;
   items: TrackedShow[];
   onOpen: (aniListId: number) => void;
+  onEmptyAction: () => void;
 }) {
   return (
     <section className="dashMiniSection dashPanel">
       <div className="dashMiniTitle">{title}</div>
       {items.length === 0 ? (
-        <div className="dashMiniEmpty">Nothing here yet.</div>
+        <EmptyState
+          actionLabel="Open search"
+          message="This section fills in as you track and update shows."
+          onAction={onEmptyAction}
+          title="Nothing here yet"
+        />
       ) : (
         items.map((item) => (
           <button key={item.id} className="dashMiniItem" onClick={() => onOpen(item.aniListId)}>
@@ -582,7 +629,9 @@ function TrackedCard({
         <div
           className="dashCover"
           style={{ backgroundImage: item.coverImageUrl ? `url(${item.coverImageUrl})` : undefined }}
-        />
+        >
+          {!item.coverImageUrl && <CoverFallback />}
+        </div>
       </button>
 
       <div className="dashCardBody">
@@ -593,7 +642,7 @@ function TrackedCard({
             onClick={() => onPatch({ isFavorite: !item.isFavorite })}
             title={item.isFavorite ? "Remove favorite" : "Favorite"}
           >
-            ★
+            <StarIcon size={18} />
           </button>
         </div>
 
@@ -692,7 +741,9 @@ function TrackedCard({
 
         <div className="dashCardActions">
           <button className="dashPillBtn" onClick={onOpen}>Details</button>
-          <button className="dashDangerBtn" onClick={onUntrack}>Untrack</button>
+          <button className="dashDangerBtn" onClick={onUntrack}>
+            <TrashIcon size={16} /> Untrack
+          </button>
         </div>
       </div>
     </article>

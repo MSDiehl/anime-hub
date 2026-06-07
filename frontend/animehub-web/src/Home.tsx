@@ -1,166 +1,161 @@
 import { useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { getErrorMessage, readApiError } from "./utils/apiError";
+import {
+  ApiClientError,
+  getMostTracked,
+  getTracked,
+  searchAnime,
+  trackShow as trackShowApi,
+  untrackShow as untrackShowApi,
+  type AnimeSearchItem,
+  type TrackedShow,
+} from "./api/client";
+import AppNav from "./components/AppNav";
+import { CoverFallback, EmptyState, SkeletonBlock, useToast } from "./components/Feedback";
+import { PlusIcon, SearchIcon, TrashIcon } from "./components/Icons";
+import { getErrorMessage } from "./utils/apiError";
 import "./Home.css";
 
 type HomeProps = {
   onLogout: () => void | Promise<void>;
 };
 
-type AnimeSearchItem = {
-  aniListId: number;
-  titleRomaji?: string;
-  titleEnglish?: string;
-  titleNative?: string;
-  format?: string;
-  status?: string;
-  episodes?: number | null;
-  season?: string | null;
-  seasonYear?: number | null;
-  averageScore?: number | null;
-  popularity?: number | null;
-  coverImageUrl?: string | null;
-};
+function useDebouncedValue<T>(value: T, delayMs: number) {
+  const [debounced, setDebounced] = useState(value);
 
-type TrackedShow = {
-  id: string;
-  aniListId: number;
-  title: string;
-  coverImageUrl?: string | null;
-  format?: string | null;
-  status?: string | null;
-  episodes?: number | null;
-  season?: string | null;
-  seasonYear?: number | null;
-  averageScore?: number | null;
-  popularity?: number | null;
-  trackingStatus?: string | null;
-};
+  useEffect(() => {
+    const handle = window.setTimeout(() => setDebounced(value), delayMs);
+    return () => window.clearTimeout(handle);
+  }, [value, delayMs]);
 
-type MostTrackedShow = Omit<TrackedShow, "id"> & {
-  trackedCount: number;
-};
+  return debounced;
+}
 
 export default function Home({ onLogout }: HomeProps) {
   const [q, setQ] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [items, setItems] = useState<AnimeSearchItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+  const [searchPage, setSearchPage] = useState(1);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { pushToast } = useToast();
 
-  // tracked
-  const [tracked, setTracked] = useState<TrackedShow[]>([]);
   const [trackingIds, setTrackingIds] = useState<Set<number>>(new Set());
-  const [mostTracked, setMostTracked] = useState<MostTrackedShow[]>([]);
-  const [mostTrackedLoading, setMostTrackedLoading] = useState(true);
-  const [mostTrackedError, setMostTrackedError] = useState<string | null>(null);
 
   const canSearch = useMemo(() => q.trim().length >= 2, [q]);
+  const debouncedQ = useDebouncedValue(q.trim(), 350);
+
+  const trackedQuery = useQuery({
+    queryKey: ["tracked"],
+    queryFn: ({ signal }) => getTracked(signal),
+  });
+
+  const mostTrackedQuery = useQuery({
+    queryKey: ["mostTracked", 4],
+    queryFn: ({ signal }) => getMostTracked(4, signal),
+  });
+
+  const searchQuery = useQuery({
+    queryKey: ["animeSearch", debouncedQ, searchPage],
+    queryFn: ({ signal }) =>
+      searchAnime({ q: debouncedQ, page: searchPage, perPage: 12 }, signal),
+    enabled: hasSearched && debouncedQ.length >= 2,
+  });
+
+  const tracked = useMemo(() => trackedQuery.data ?? [], [trackedQuery.data]);
+  const mostTracked = mostTrackedQuery.data ?? [];
+  const mostTrackedLoading = mostTrackedQuery.isLoading;
+  const mostTrackedError = mostTrackedQuery.error
+    ? getErrorMessage(mostTrackedQuery.error, "Failed to load most tracked")
+    : null;
+  const loading = searchQuery.isFetching;
+  const items = searchQuery.data?.items ?? [];
+  const searchError = searchQuery.error
+    ? getErrorMessage(searchQuery.error, "Search failed")
+    : null;
+
   const trackedIds = useMemo(
     () => new Set(tracked.map((t) => t.aniListId)),
     [tracked],
   );
 
   useEffect(() => {
-    loadTracked();
-    loadMostTracked();
-  }, []);
-
-  async function loadTracked() {
-    try {
-      const res = await fetch("/api/tracked", { credentials: "include" });
-      if (!res.ok) return;
-      setTracked(await res.json());
-    } catch {
-      // ignore for now
-    }
-  }
-
-  async function loadMostTracked() {
-    setMostTrackedLoading(true);
-    setMostTrackedError(null);
-
-    try {
-      const res = await fetch("/api/tracked/most?limit=4", {
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error(await readApiError(res));
-      setMostTracked(await res.json());
-    } catch (e: unknown) {
-      setMostTrackedError(getErrorMessage(e, "Failed to load most tracked"));
-      setMostTracked([]);
-    } finally {
-      setMostTrackedLoading(false);
-    }
-  }
+    setSearchPage(1);
+  }, [debouncedQ]);
 
   async function runSearch() {
     const query = q.trim();
     if (query.length < 2) return;
 
     setError(null);
-    setLoading(true);
     setHasSearched(true);
-
-    try {
-      const res = await fetch(
-        `/api/anime/search?q=${encodeURIComponent(query)}&perPage=12`,
-      );
-      if (!res.ok) throw new Error(await readApiError(res, "Search failed"));
-      setItems(await res.json());
-    } catch (e: unknown) {
-      setError(getErrorMessage(e, "Search failed"));
-    } finally {
-      setLoading(false);
-    }
+    setSearchPage(1);
+    await queryClient.invalidateQueries({ queryKey: ["animeSearch", query] });
   }
 
   function resetToHero() {
     setHasSearched(false);
-    setItems([]);
     setError(null);
+    setSearchPage(1);
   }
 
   function bestTitle(x: AnimeSearchItem) {
     return x.titleEnglish || x.titleRomaji || x.titleNative || "Untitled";
   }
 
-  async function trackShow(x: AnimeSearchItem) {
+  async function trackAnime(x: AnimeSearchItem) {
     const id = x.aniListId;
     if (trackedIds.has(id)) return;
 
-    // mark "tracking..." for this specific card
+    const previousTracked = queryClient.getQueryData<TrackedShow[]>(["tracked"]);
+    const optimisticShow: TrackedShow = {
+      id: `optimistic-${id}`,
+      aniListId: id,
+      title: bestTitle(x),
+      coverImageUrl: x.coverImageUrl,
+      format: x.format,
+      status: x.status,
+      episodes: x.episodes,
+      season: x.season,
+      seasonYear: x.seasonYear,
+      averageScore: x.averageScore,
+      popularity: x.popularity,
+      trackingStatus: "PlanToWatch",
+      isFavorite: false,
+    };
+
     setTrackingIds((prev) => new Set(prev).add(id));
+    queryClient.setQueryData<TrackedShow[]>(["tracked"], (current = []) => [
+      ...current.filter((show) => show.aniListId !== id),
+      optimisticShow,
+    ]);
 
     try {
-      const res = await fetch("/api/tracked", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          aniListId: x.aniListId,
-          title: bestTitle(x),
-          coverImageUrl: x.coverImageUrl,
-          format: x.format,
-          status: x.status,
-          episodes: x.episodes,
-          season: x.season,
-          seasonYear: x.seasonYear,
-          averageScore: x.averageScore,
-          popularity: x.popularity,
-        }),
+      await trackShowApi({
+        aniListId: x.aniListId,
+        title: bestTitle(x),
+        coverImageUrl: x.coverImageUrl,
+        format: x.format,
+        status: x.status,
+        episodes: x.episodes,
+        season: x.season,
+        seasonYear: x.seasonYear,
+        averageScore: x.averageScore,
+        popularity: x.popularity,
       });
 
-      // 409 means already tracked (safe to treat as success)
-      if (!res.ok && res.status !== 409) {
-        throw new Error(await readApiError(res, "Failed to track show"));
-      }
-
-      await loadTracked();
-      await loadMostTracked();
+      await queryClient.invalidateQueries({ queryKey: ["tracked"] });
+      await queryClient.invalidateQueries({ queryKey: ["mostTracked"] });
+      pushToast(`${bestTitle(x)} added to your tracked list.`, "success");
     } catch (e: unknown) {
+      if (e instanceof ApiClientError && e.status === 409) {
+        await queryClient.invalidateQueries({ queryKey: ["tracked"] });
+        return;
+      }
+      queryClient.setQueryData<TrackedShow[]>(["tracked"], previousTracked ?? []);
       setError(getErrorMessage(e, "Failed to track show"));
+      pushToast("Could not track that show.", "error");
     } finally {
       setTrackingIds((prev) => {
         const next = new Set(prev);
@@ -170,26 +165,30 @@ export default function Home({ onLogout }: HomeProps) {
     }
   }
 
-  async function untrackShow(aniListId: number) {
+  async function untrackAnime(aniListId: number) {
     if (!trackedIds.has(aniListId)) return;
 
+    const previousTracked = queryClient.getQueryData<TrackedShow[]>(["tracked"]);
+    const removed = previousTracked?.find((item) => item.aniListId === aniListId);
     setTrackingIds((prev) => new Set(prev).add(aniListId));
     setError(null);
+    queryClient.setQueryData<TrackedShow[]>(["tracked"], (current = []) =>
+      current.filter((item) => item.aniListId !== aniListId),
+    );
 
     try {
-      const res = await fetch(`/api/tracked/${aniListId}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-
-      if (!res.ok && res.status !== 404) {
-        throw new Error(await readApiError(res, "Failed to untrack show"));
-      }
-
-      await loadTracked();
-      await loadMostTracked();
+      await untrackShowApi(aniListId);
+      await queryClient.invalidateQueries({ queryKey: ["tracked"] });
+      await queryClient.invalidateQueries({ queryKey: ["mostTracked"] });
+      pushToast(`${removed?.title ?? "Show"} removed from tracking.`, "success");
     } catch (e: unknown) {
+      if (e instanceof ApiClientError && e.status === 404) {
+        await queryClient.invalidateQueries({ queryKey: ["tracked"] });
+        return;
+      }
+      queryClient.setQueryData<TrackedShow[]>(["tracked"], previousTracked ?? []);
       setError(getErrorMessage(e, "Failed to untrack show"));
+      pushToast("Could not remove that show.", "error");
     } finally {
       setTrackingIds((prev) => {
         const next = new Set(prev);
@@ -208,30 +207,7 @@ export default function Home({ onLogout }: HomeProps) {
         <div className="homeInkWash" />
       </div>
 
-      <header className="homeTopBar">
-        <div className="homeBrand" aria-label="AnimeHub">
-          AnimeHub
-        </div>
-
-        <div className="homeTopBarRight">
-          <button
-            className="homePillBtn"
-            onClick={() => navigate("/dashboard")}
-          >
-            Dashboard
-          </button>
-          <button className="homePillBtn" disabled title="Coming soon">
-            Forums
-          </button>
-          <button className="dashPillBtn" onClick={() => navigate("/schedule")}>
-            Schedule
-          </button>
-
-          <button onClick={onLogout} className="homeLogoutBtn">
-            Logout
-          </button>
-        </div>
-      </header>
+      <AppNav active="search" onLogout={onLogout} />
 
       <section className={`homeHero ${hasSearched ? "compact" : "centered"}`}>
         <div className="homeHeroInner">
@@ -246,7 +222,7 @@ export default function Home({ onLogout }: HomeProps) {
           <div className="homeSearchRow">
             <div className="homeSearchBox">
               <span className="homeSearchIcon" aria-hidden="true">
-                🔎
+                <SearchIcon />
               </span>
 
               <input
@@ -282,7 +258,9 @@ export default function Home({ onLogout }: HomeProps) {
             )}
           </div>
 
-          {error && <div className="homeError">{error}</div>}
+          {(error || searchError) && (
+            <div className="homeError">{error || searchError}</div>
+          )}
 
           {!hasSearched && (
             <div className="homeMostTracked">
@@ -293,22 +271,26 @@ export default function Home({ onLogout }: HomeProps) {
                     HOT!
                   </span>
                 </div>
-                <span className="homeMuted">
-                  {mostTrackedLoading
-                    ? "Loading community picks."
-                    : "Based on tracked shows."}
-                </span>
+                <span className="homeMuted">Based on tracked shows.</span>
               </div>
 
               <div className="homeCardGrid">
                 {mostTrackedLoading ? (
-                  <div className="homeEmpty">Loading most tracked…</div>
+                  <div className="homeCard skeletonCard">
+                    <SkeletonBlock rows={3} />
+                  </div>
                 ) : mostTrackedError ? (
                   <div className="homeError">{mostTrackedError}</div>
                 ) : mostTracked.length === 0 ? (
-                  <div className="homeEmpty">
-                    No tracked shows yet. Track one to start the list.
-                  </div>
+                  <EmptyState
+                    actionLabel="Search anime"
+                    message="Track a show to start shaping the community list."
+                    onAction={() => {
+                      setHasSearched(true);
+                      window.setTimeout(() => document.querySelector<HTMLInputElement>(".homeInput")?.focus(), 0);
+                    }}
+                    title="No tracked shows yet"
+                  />
                 ) : (
                   mostTracked.map((show) => (
                     <div key={show.aniListId} className="homeCard">
@@ -319,7 +301,9 @@ export default function Home({ onLogout }: HomeProps) {
                             ? `url(${show.coverImageUrl})`
                             : undefined,
                         }}
-                      />
+                      >
+                        {!show.coverImageUrl && <CoverFallback />}
+                      </div>
                       <div className="homeCardBody">
                         <div className="homeCardTitle">{show.title}</div>
                         <div className="homeCardSub">
@@ -358,7 +342,13 @@ export default function Home({ onLogout }: HomeProps) {
             </div>
 
             <div className="homeResultsGrid">
-              {items.map((x) => {
+              {loading && items.length === 0 ? (
+                Array.from({ length: 6 }, (_, index) => (
+                  <div className="homeResultCard skeletonCard" key={index}>
+                    <SkeletonBlock rows={4} />
+                  </div>
+                ))
+              ) : items.map((x) => {
                 const isTracked = trackedIds.has(x.aniListId);
                 const isTracking = trackingIds.has(x.aniListId);
 
@@ -369,18 +359,23 @@ export default function Home({ onLogout }: HomeProps) {
                     onClick={() => navigate(`/anime/${x.aniListId}`)}
                     role="button"
                     tabIndex={0}
-                    onKeyDown={(e) =>
-                      e.key === "Enter" && navigate(`/anime/${x.aniListId}`)
-                    }
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        navigate(`/anime/${x.aniListId}`);
+                      }
+                    }}
                   >
                     <div
                       className="homeResultCover"
                       style={{
                         backgroundImage: x.coverImageUrl
                           ? `url(${x.coverImageUrl})`
-                          : undefined,
+                        : undefined,
                       }}
-                    />
+                    >
+                      {!x.coverImageUrl && <CoverFallback />}
+                    </div>
 
                     <div className="homeResultBody">
                       <div className="homeResultTitle">{bestTitle(x)}</div>
@@ -407,12 +402,12 @@ export default function Home({ onLogout }: HomeProps) {
                             ].join(" ")}
                             onClick={(e) => {
                               e.stopPropagation();
-                              untrackShow(x.aniListId);
+                              untrackAnime(x.aniListId);
                             }}
                             disabled={isTracking}
                             title="Remove from tracked shows"
                           >
-                            {isTracking ? "Untracking…" : "Untrack"}
+                            {isTracking ? "Untracking…" : <><TrashIcon size={16} /> Untrack</>}
                           </button>
                         ) : (
                           <button
@@ -422,12 +417,12 @@ export default function Home({ onLogout }: HomeProps) {
                             ].join(" ")}
                             onClick={(e) => {
                               e.stopPropagation();
-                              trackShow(x);
+                              trackAnime(x);
                             }}
                             disabled={isTracking}
                             title="Track this show"
                           >
-                            {isTracking ? "Tracking…" : "Track"}
+                            {isTracking ? "Tracking…" : <><PlusIcon size={16} /> Track</>}
                           </button>
                         )}
                       </div>
@@ -437,8 +432,36 @@ export default function Home({ onLogout }: HomeProps) {
               })}
             </div>
 
-            {!loading && items.length === 0 && !error && (
-              <div className="homeEmpty">No results. Try another search.</div>
+            {searchQuery.data && searchQuery.data.lastPage !== 0 && (
+              <div className="homePager">
+                <button
+                  className="homeClearBtn"
+                  onClick={() => setSearchPage((value) => Math.max(1, value - 1))}
+                  disabled={searchPage <= 1 || loading}
+                >
+                  Previous
+                </button>
+                <span>
+                  Page {searchQuery.data.page}
+                  {searchQuery.data.lastPage ? ` of ${searchQuery.data.lastPage}` : ""}
+                </span>
+                <button
+                  className="homeClearBtn"
+                  onClick={() => setSearchPage((value) => value + 1)}
+                  disabled={!searchQuery.data.hasNextPage || loading}
+                >
+                  Next
+                </button>
+              </div>
+            )}
+
+            {!loading && items.length === 0 && !error && !searchError && (
+              <EmptyState
+                actionLabel="Clear search"
+                message="Try a different title, alternate spelling, or a shorter query."
+                onAction={resetToHero}
+                title="No results"
+              />
             )}
           </div>
         )}

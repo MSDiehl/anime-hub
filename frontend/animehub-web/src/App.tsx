@@ -1,14 +1,28 @@
 import { useEffect, useState } from "react";
-import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 
 import Home from "./Home";
 import AnimeDetails from "./pages/AnimeDetails";
 import Dashboard from "./pages/Dashboard";
+import Forums from "./pages/Forums";
+import ForumThread from "./pages/ForumThread";
 import Schedule from "./pages/Schedule";
+import UserProfile from "./pages/UserProfile";
+import { clearCsrfToken, csrfFetch, refreshCsrfToken } from "./api/csrf";
+import { SkeletonBlock } from "./components/Feedback";
+import { CheckIcon, KeyIcon, MailIcon, StarIcon } from "./components/Icons";
 import { getErrorMessage, readApiError } from "./utils/apiError";
 import "./App.css";
 
-type Me = { id?: string; email?: string };
+type Me = {
+  id?: string;
+  email?: string;
+  emailConfirmed?: boolean;
+  displayName?: string;
+  avatarUrl?: string | null;
+  isProfilePublic?: boolean;
+  canModerate?: boolean;
+};
 
 export default function App() {
   const [me, setMe] = useState<Me | null>(null);
@@ -17,7 +31,7 @@ export default function App() {
   async function refreshMe() {
     setLoading(true);
     try {
-      const res = await fetch("/api/auth/me", { credentials: "include" });
+      const res = await csrfFetch("/api/auth/me", { credentials: "include" });
       if (!res.ok) {
         setMe(null);
       } else {
@@ -29,10 +43,11 @@ export default function App() {
   }
 
   async function logout() {
-    await fetch("/api/auth/logout", {
+    await csrfFetch("/api/auth/logout", {
       method: "POST",
       credentials: "include",
     });
+    clearCsrfToken();
     await refreshMe();
   }
 
@@ -40,7 +55,13 @@ export default function App() {
     refreshMe();
   }, []);
 
-  if (loading) return <div style={{ padding: 24 }}>Loading…</div>;
+  if (loading) {
+    return (
+      <div className="appBoot">
+        <SkeletonBlock rows={3} />
+      </div>
+    );
+  }
   if (!me) return <AuthPage onAuthed={refreshMe} />;
 
   return (
@@ -56,10 +77,15 @@ export default function App() {
       {/* Schedule */}
       <Route path="/schedule" element={<Schedule onLogout={logout} />} />
 
-      {/* Forums (Coming soon for now) */}
+      {/* Forums */}
+      <Route path="/forums" element={<Forums onLogout={logout} />} />
       <Route
-        path="/forums"
-        element={<ComingSoon title="Forums" onLogout={logout} />}
+        path="/forums/thread/:threadId"
+        element={<ForumThread onLogout={logout} />}
+      />
+      <Route
+        path="/users/:userId"
+        element={<UserProfile onLogout={logout} />}
       />
 
       {/* Anime Details */}
@@ -75,148 +101,97 @@ export default function App() {
 }
 
 /* ---------------------------
-   Coming Soon page (Forums)
----------------------------- */
-function ComingSoon({
-  title,
-  onLogout,
-}: {
-  title: string;
-  onLogout: () => Promise<void>;
-}) {
-  const navigate = useNavigate();
-
-  return (
-    <div
-      style={{
-        minHeight: "100vh",
-        padding: 24,
-        color: "rgba(255,255,255,.92)",
-      }}
-    >
-      <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 12,
-            marginBottom: 18,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div
-              style={{
-                fontWeight: 900,
-                letterSpacing: 0.5,
-                cursor: "pointer",
-              }}
-              onClick={() => navigate("/dashboard")}
-              title="Back to Dashboard"
-            >
-              AnimeHub
-            </div>
-
-            <span style={{ opacity: 0.6 }}>•</span>
-
-            <div style={{ fontWeight: 800 }}>{title}</div>
-          </div>
-
-          <div style={{ display: "flex", gap: 10 }}>
-            <button
-              onClick={() => navigate("/dashboard")}
-              style={ghostBtnStyle}
-              type="button"
-            >
-              Dashboard
-            </button>
-            <button onClick={onLogout} style={primaryBtnStyle} type="button">
-              Logout
-            </button>
-          </div>
-        </div>
-
-        <div
-          style={{
-            borderRadius: 18,
-            border: "1px solid rgba(255,255,255,.12)",
-            background: "rgba(255,255,255,.06)",
-            padding: 22,
-          }}
-        >
-          <div style={{ fontSize: 26, fontWeight: 900, marginBottom: 8 }}>
-            {title} — Coming soon
-          </div>
-
-          <div style={{ opacity: 0.75, lineHeight: 1.6, maxWidth: 720 }}>
-            We’re building anime + episode discussions directly inside the anime
-            detail pages first. After that, this page becomes the global feed.
-          </div>
-
-          <div style={{ marginTop: 18, display: "flex", gap: 10 }}>
-            <button
-              onClick={() => navigate("/search")}
-              style={primaryBtnStyle}
-              type="button"
-            >
-              Go to Search
-            </button>
-            <button
-              onClick={() => navigate("/dashboard")}
-              style={ghostBtnStyle}
-              type="button"
-            >
-              Back to Dashboard
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const primaryBtnStyle: React.CSSProperties = {
-  padding: "10px 14px",
-  borderRadius: 999,
-  border: "1px solid rgba(255,255,255,.18)",
-  background: "rgba(255,255,255,.12)",
-  color: "rgba(255,255,255,.92)",
-  cursor: "pointer",
-  fontWeight: 800,
-};
-
-const ghostBtnStyle: React.CSSProperties = {
-  padding: "10px 14px",
-  borderRadius: 999,
-  border: "1px solid rgba(255,255,255,.14)",
-  background: "transparent",
-  color: "rgba(255,255,255,.9)",
-  cursor: "pointer",
-  fontWeight: 800,
-};
-
-/* ---------------------------
-   Auth page (UNCHANGED)
+   Auth page
 ---------------------------- */
 function AuthPage({ onAuthed }: { onAuthed: () => Promise<void> | void }) {
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<"login" | "register" | "confirm" | "forgot" | "reset">(
+    "login",
+  );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [userId, setUserId] = useState("");
+  const [token, setToken] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (window.location.pathname === "/reset-password") {
+      setEmail(params.get("email") ?? "");
+      setToken(params.get("token") ?? "");
+      setMode("reset");
+    }
+    if (window.location.pathname === "/confirm-email") {
+      setUserId(params.get("userId") ?? "");
+      setToken(params.get("token") ?? "");
+      setMode("confirm");
+    }
+  }, []);
 
   async function submit() {
     setError(null);
+    setNotice(null);
     setBusy(true);
     try {
+      if (mode === "forgot") {
+        const res = await csrfFetch("/api/auth/forgot-password", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ email }),
+        });
+
+        if (!res.ok) throw new Error(await readApiError(res, "Password reset failed"));
+        const json = (await res.json()) as AuthWorkflowResponse;
+        setUserId(json.userId ?? "");
+        setToken(json.developmentToken ?? "");
+        setMode("reset");
+        setNotice("Check your email for a password reset token.");
+        return;
+      }
+
+      if (mode === "reset") {
+        const res = await csrfFetch("/api/auth/reset-password", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ email, token, newPassword }),
+        });
+
+        if (!res.ok) throw new Error(await readApiError(res, "Password reset failed"));
+        setPassword("");
+        setNewPassword("");
+        setToken("");
+        setMode("login");
+        setNotice("Password reset. Sign in with the new password.");
+        return;
+      }
+
+      if (mode === "confirm") {
+        const res = await csrfFetch("/api/auth/confirm-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ userId, token }),
+        });
+
+        if (!res.ok) throw new Error(await readApiError(res, "Email confirmation failed"));
+        clearCsrfToken();
+        await refreshCsrfToken();
+        await onAuthed();
+        return;
+      }
+
       const url = mode === "login" ? "/api/auth/login" : "/api/auth/register";
       const body =
         mode === "login"
           ? { email, password }
           : { email, password, displayName };
 
-      const res = await fetch(url, {
+      const res = await csrfFetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -227,9 +202,45 @@ function AuthPage({ onAuthed }: { onAuthed: () => Promise<void> | void }) {
         throw new Error(await readApiError(res, "Auth failed"));
       }
 
+      if (mode === "register") {
+        const json = (await res.json()) as AuthWorkflowResponse | Me;
+        if ("requiresEmailConfirmation" in json && json.requiresEmailConfirmation) {
+          setUserId(json.userId ?? "");
+          setToken(json.developmentToken ?? "");
+          setMode("confirm");
+          setNotice("Check your email to confirm this account.");
+          return;
+        }
+      }
+
+      clearCsrfToken();
+      await refreshCsrfToken();
       await onAuthed();
     } catch (e: unknown) {
       setError(getErrorMessage(e, "Auth failed"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resendConfirmation() {
+    setError(null);
+    setNotice(null);
+    setBusy(true);
+    try {
+      const res = await csrfFetch("/api/auth/resend-confirmation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email }),
+      });
+      if (!res.ok) throw new Error(await readApiError(res, "Resend failed"));
+      const json = (await res.json()) as AuthWorkflowResponse;
+      setUserId(json.userId ?? userId);
+      setToken(json.developmentToken ?? token);
+      setNotice("Confirmation email sent.");
+    } catch (e: unknown) {
+      setError(getErrorMessage(e, "Resend failed"));
     } finally {
       setBusy(false);
     }
@@ -259,9 +270,7 @@ function AuthPage({ onAuthed }: { onAuthed: () => Promise<void> | void }) {
               <div>
                 <h1 className="authTitle">AnimeHub</h1>
                 <p className="authSubtitle">
-                  {mode === "login"
-                    ? "Sign in to continue"
-                    : "Create your account"}
+                  {authSubtitle(mode)}
                 </p>
               </div>
             </div>
@@ -278,7 +287,11 @@ function AuthPage({ onAuthed }: { onAuthed: () => Promise<void> | void }) {
           <div className="authTabs" role="tablist" aria-label="Auth mode">
             <button
               type="button"
-              onClick={() => setMode("login")}
+              onClick={() => {
+                setMode("login");
+                setError(null);
+                setNotice(null);
+              }}
               className="authTab"
               data-active={mode === "login" ? "true" : "false"}
               role="tab"
@@ -288,7 +301,11 @@ function AuthPage({ onAuthed }: { onAuthed: () => Promise<void> | void }) {
             </button>
             <button
               type="button"
-              onClick={() => setMode("register")}
+              onClick={() => {
+                setMode("register");
+                setError(null);
+                setNotice(null);
+              }}
               className="authTab"
               data-active={mode === "register" ? "true" : "false"}
               role="tab"
@@ -309,7 +326,7 @@ function AuthPage({ onAuthed }: { onAuthed: () => Promise<void> | void }) {
                 <label className="authLabel">Display name</label>
                 <div className="authInputWrap">
                   <span className="authIcon" aria-hidden="true">
-                    ★
+                    <StarIcon />
                   </span>
                   <input
                     value={displayName}
@@ -322,11 +339,12 @@ function AuthPage({ onAuthed }: { onAuthed: () => Promise<void> | void }) {
               </div>
             )}
 
-            <div className="authField">
+            {(mode === "login" || mode === "register" || mode === "forgot" || mode === "reset") && (
+              <div className="authField">
               <label className="authLabel">Email</label>
               <div className="authInputWrap">
                 <span className="authIcon" aria-hidden="true">
-                  ✉
+                  <MailIcon />
                 </span>
                 <input
                   value={email}
@@ -337,13 +355,15 @@ function AuthPage({ onAuthed }: { onAuthed: () => Promise<void> | void }) {
                   inputMode="email"
                 />
               </div>
-            </div>
+              </div>
+            )}
 
-            <div className="authField">
+            {(mode === "login" || mode === "register") && (
+              <div className="authField">
               <label className="authLabel">Password</label>
               <div className="authInputWrap">
                 <span className="authIcon" aria-hidden="true">
-                  ⚷
+                  <KeyIcon />
                 </span>
                 <input
                   value={password}
@@ -359,12 +379,92 @@ function AuthPage({ onAuthed }: { onAuthed: () => Promise<void> | void }) {
                   }}
                 />
               </div>
-            </div>
+              </div>
+            )}
+
+            {mode === "confirm" && (
+              <>
+                <div className="authField">
+                  <label className="authLabel">User ID</label>
+                  <div className="authInputWrap">
+                    <span className="authIcon" aria-hidden="true">
+                      <KeyIcon />
+                    </span>
+                    <input
+                      value={userId}
+                      onChange={(e) => setUserId(e.target.value)}
+                      className="authInput"
+                      autoComplete="off"
+                    />
+                  </div>
+                </div>
+
+                <div className="authField">
+                  <label className="authLabel">Confirmation token</label>
+                  <div className="authInputWrap">
+                    <span className="authIcon" aria-hidden="true">
+                      <CheckIcon />
+                    </span>
+                    <input
+                      value={token}
+                      onChange={(e) => setToken(e.target.value)}
+                      className="authInput"
+                      autoComplete="off"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {mode === "reset" && (
+              <>
+                <div className="authField">
+                  <label className="authLabel">Reset token</label>
+                  <div className="authInputWrap">
+                    <span className="authIcon" aria-hidden="true">
+                      <KeyIcon />
+                    </span>
+                    <input
+                      value={token}
+                      onChange={(e) => setToken(e.target.value)}
+                      className="authInput"
+                      autoComplete="one-time-code"
+                    />
+                  </div>
+                </div>
+
+                <div className="authField">
+                  <label className="authLabel">New password</label>
+                  <div className="authInputWrap">
+                    <span className="authIcon" aria-hidden="true">
+                      <KeyIcon />
+                    </span>
+                    <input
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="••••••••"
+                      type="password"
+                      className="authInput"
+                      autoComplete="new-password"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !busy) submit();
+                      }}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
 
             {error && (
               <div className="authError" role="alert">
                 <div className="authErrorTitle">WHAM!</div>
                 <div className="authErrorMsg">{error}</div>
+              </div>
+            )}
+
+            {notice && (
+              <div className="authHint" role="status">
+                {notice}
               </div>
             )}
 
@@ -377,16 +477,37 @@ function AuthPage({ onAuthed }: { onAuthed: () => Promise<void> | void }) {
             >
               <span className="authPrimaryBtnBurst" aria-hidden="true" />
               <span className="authPrimaryBtnText">
-                {busy
-                  ? "Working…"
-                  : mode === "login"
-                    ? "Sign in"
-                    : "Create account"}
+                {busy ? "Working…" : authButtonLabel(mode)}
               </span>
             </button>
 
             <div className="authHint">
-              Tip: press <span className="authKbd">Enter</span> to submit
+              {mode === "login" ? (
+                <button
+                  type="button"
+                  className="authInlineBtn"
+                  onClick={() => setMode("forgot")}
+                >
+                  Forgot password?
+                </button>
+              ) : mode === "confirm" ? (
+                <button
+                  type="button"
+                  className="authInlineBtn"
+                  onClick={resendConfirmation}
+                  disabled={busy || !email}
+                >
+                  Resend confirmation
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="authInlineBtn"
+                  onClick={() => setMode("login")}
+                >
+                  Back to sign in
+                </button>
+              )}
             </div>
           </div>
 
@@ -399,4 +520,28 @@ function AuthPage({ onAuthed }: { onAuthed: () => Promise<void> | void }) {
       </div>
     </div>
   );
+}
+
+type AuthWorkflowResponse = {
+  userId?: string;
+  email?: string;
+  requiresEmailConfirmation?: boolean;
+  resetEmailSent?: boolean;
+  developmentToken?: string | null;
+};
+
+function authSubtitle(mode: "login" | "register" | "confirm" | "forgot" | "reset") {
+  if (mode === "login") return "Sign in to continue";
+  if (mode === "register") return "Create your account";
+  if (mode === "confirm") return "Confirm your email";
+  if (mode === "forgot") return "Reset your password";
+  return "Choose a new password";
+}
+
+function authButtonLabel(mode: "login" | "register" | "confirm" | "forgot" | "reset") {
+  if (mode === "login") return "Sign in";
+  if (mode === "register") return "Create account";
+  if (mode === "confirm") return "Confirm email";
+  if (mode === "forgot") return "Send reset";
+  return "Reset password";
 }

@@ -1049,6 +1049,11 @@
   font-size: 12px;
   opacity: 0.75;
   font-weight: 900;
+  min-width: 40px;
+}
+
+.adThreadListMeta .skeletonLine {
+  min-height: 12px;
 }
 
 .adThreadItem {
@@ -1065,6 +1070,12 @@
 }
 .adThreadItem:hover { transform: translateY(-2px); }
 .adThreadItem:active { transform: translateY(1px); }
+.adThreadItem:disabled,
+.adThreadItem.isPending {
+  cursor: wait;
+  opacity: 0.74;
+  transform: none;
+}
 
 .adThreadItem.isActive {
   background: linear-gradient(135deg, rgba(255,208,0,.55), rgba(255,106,94,.18));

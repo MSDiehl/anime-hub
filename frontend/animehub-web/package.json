@@ -7,10 +7,12 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "openapi:types": "openapi-typescript http://localhost:7162/swagger/v1/swagger.json -o src/api/openapi.d.ts",
     "preview": "vite preview",
     "test": "vitest run"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.101.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.12.0",
@@ -27,6 +29,7 @@
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
     "jsdom": "^27.0.0",
+    "openapi-typescript": "^7.13.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
     "vite": "^7.2.4",

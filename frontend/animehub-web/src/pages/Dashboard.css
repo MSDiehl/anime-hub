@@ -691,6 +691,30 @@
   }
 }
 
+@media (min-width: 1440px) {
+  .dashMain {
+    max-width: 1420px;
+  }
+
+  .dashGrid {
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  }
+
+  .dashSectionGrid {
+    grid-template-columns: repeat(4, minmax(220px, 1fr));
+  }
+}
+
+@media (min-width: 1800px) {
+  .dashMain {
+    max-width: 1600px;
+  }
+
+  .dashGrid {
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  }
+}
+
 @media (max-width: 980px) {
   .dashToolbar,
   .dashSectionGrid {

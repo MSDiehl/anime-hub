@@ -229,6 +229,66 @@
   justify-content: flex-end;
 }
 
+.schedQuickBtn,
+.schedNotifyBtn {
+  font-size: 12px;
+  padding: 10px 12px;
+  border-radius: 999px;
+  color: #fff;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.08);
+  border: 3px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 6px 6px 0 rgba(0,0,0,0.35);
+  font-weight: 950;
+}
+
+.schedQuickBtn:hover,
+.schedNotifyBtn:hover {
+  transform: translateY(-2px);
+}
+
+.schedQuickBtn:active,
+.schedNotifyBtn:active {
+  transform: translateY(1px);
+}
+
+.schedNotifyBtn {
+  color: var(--ink);
+  background: linear-gradient(135deg, rgba(255,208,0,.84), rgba(255,106,94,.54));
+  border-color: var(--ink);
+  box-shadow: 6px 6px 0 var(--ink);
+}
+
+.schedNotifyBtn:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.schedSegmented {
+  display: inline-flex;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 3px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 6px 6px 0 rgba(0,0,0,0.35);
+}
+
+.schedSegmented button {
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 11px;
+  color: #fff;
+  background: transparent;
+  font-weight: 1000;
+  cursor: pointer;
+}
+
+.schedSegmented button.isActive {
+  color: var(--ink);
+  background: var(--accent2);
+}
+
 .schedWeekNav {
   display: flex;
   align-items: center;
@@ -309,6 +369,59 @@
   background: linear-gradient(135deg, rgba(255,208,0,0.95), rgba(255,59,48,0.75));
 }
 
+.schedFilterPanel {
+  margin-bottom: 16px;
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 180px auto auto auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, var(--paper), var(--paper2));
+  border: 4px solid var(--ink);
+  box-shadow: 10px 12px 0 var(--ink), 0 18px 60px rgba(0,0,0,0.28);
+  color: var(--ink);
+}
+
+.schedSearchInput,
+.schedSelectLabel select {
+  width: 100%;
+  min-width: 0;
+  border-radius: 14px;
+  border: 3px solid var(--ink);
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 5px 5px 0 var(--ink);
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 900;
+  outline: none;
+}
+
+.schedSearchInput::placeholder {
+  color: rgba(0,0,0,.48);
+}
+
+.schedSelectLabel {
+  display: grid;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 1000;
+}
+
+.schedFilterPanel .schedToggle {
+  color: var(--ink);
+  background: #fff;
+  border-color: var(--ink);
+  box-shadow: 5px 5px 0 var(--ink);
+}
+
+.schedFilterPanel .schedTogglePill {
+  border-color: var(--ink);
+  background: rgba(0,0,0,.06);
+}
+
 /* --- panels (loading/error) match ink/paper --- */
 
 .schedPanel {
@@ -351,6 +464,15 @@
   /* no horizontal scroll on big screens */
   overflow-x: hidden;
   padding-bottom: 10px;
+}
+
+.schedMonthGrid .schedDay {
+  min-width: 0;
+  height: 420px;
+}
+
+.schedDay.isOutsideMonth {
+  opacity: 0.62;
 }
 
 
@@ -410,6 +532,27 @@
   min-height: 0;
 }
 
+.schedGroup {
+  display: grid;
+  gap: 10px;
+}
+
+.schedGroup + .schedGroup {
+  margin-top: 2px;
+}
+
+.schedGroupTitle {
+  display: inline-flex;
+  width: fit-content;
+  padding: 5px 9px;
+  border-radius: 999px;
+  border: 3px solid var(--ink);
+  background: rgba(255,208,0,.42);
+  box-shadow: 4px 4px 0 var(--ink);
+  font-size: 11px;
+  font-weight: 1000;
+}
+
 /* Optional: nicer scrollbar */
 .schedCards::-webkit-scrollbar { width: 10px; }
 .schedCards::-webkit-scrollbar-thumb {
@@ -443,6 +586,14 @@
 }
 
 .schedCard:active { transform: translateY(1px); }
+
+.schedCard.isTracked {
+  background: linear-gradient(180deg, #fff, rgba(255,208,0,.18));
+}
+
+.schedCard.isWatched {
+  opacity: 0.74;
+}
 
 .schedCoverWrap {
   position: relative;
@@ -485,6 +636,20 @@
 
 .schedEpBadge span { color: var(--accent); }
 
+.schedCountdownBadge {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  background: var(--accent2);
+  color: var(--ink);
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 3px solid var(--ink);
+  box-shadow: 5px 5px 0 var(--ink);
+  font-weight: 1000;
+  font-size: 12px;
+}
+
 .schedCardBody {
   padding: 10px 12px 12px;
 }
@@ -509,6 +674,14 @@
   border-radius: 999px;
   font-size: 12px;
   box-shadow: 4px 4px 0 var(--ink);
+}
+
+.schedMetaChip.isTracked {
+  background: rgba(255,208,0,.38);
+}
+
+.schedMetaChip.isWatched {
+  background: rgba(0,0,0,.06);
 }
 
 .schedHint {
@@ -538,6 +711,41 @@
     grid-template-columns: repeat(7, minmax(260px, 1fr));
     overflow-x: auto;
   }
+
+  .schedFilterPanel {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .schedFilterPanel {
+    grid-template-columns: 1fr;
+  }
+
+  .schedWeekNav {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .schedWeekLabel {
+    white-space: normal;
+    text-align: center;
+  }
+
+  .schedControls {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .schedQuickBtn,
+  .schedNotifyBtn,
+  .schedSegmented {
+    flex: 1;
+  }
+
+  .schedSegmented {
+    justify-content: center;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -548,6 +756,8 @@
   .schedPillBtn,
   .schedLogoutBtn,
   .schedNavBtn,
+  .schedQuickBtn,
+  .schedNotifyBtn,
   .schedCard {
     transition: none !important;
   }

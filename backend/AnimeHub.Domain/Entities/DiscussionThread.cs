@@ -19,9 +19,27 @@ public class DiscussionThread
     [MaxLength(5000)]
     public string Body { get; set; } = "";
 
+    [MaxLength(80)]
+    public string Category { get; set; } = "General";
+
+    [MaxLength(500)]
+    public string? TagCsv { get; set; }
+
+    public bool ContainsSpoilers { get; set; }
+
+    public bool IsPinned { get; set; }
+
+    public bool IsLocked { get; set; }
+
+    public bool IsDeleted { get; set; }
+
     public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
 
     public DateTime? UpdatedUtc { get; set; }
+
+    public DateTime? DeletedUtc { get; set; }
+
+    public DateTime LastActivityUtc { get; set; } = DateTime.UtcNow;
 
     public ICollection<DiscussionComment> Comments { get; set; } = new List<DiscussionComment>();
 }

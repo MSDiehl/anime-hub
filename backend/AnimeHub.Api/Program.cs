@@ -1,24 +1,46 @@
 using System.Net.Http.Headers;
+using AnimeHub.Api.Models;
+using AnimeHub.Api.Middleware;
+using AnimeHub.Api.Services;
 using AnimeHub.Infrastructure.Auth;
 using AnimeHub.Infrastructure.Data;
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
+LoadLocalDotEnv();
+
 var builder = WebApplication.CreateBuilder(args);
+const string CorsPolicyName = "ConfiguredCors";
 
 // Controllers + Swagger
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddHealthChecks();
 
-// CORS for Vite dev server
+builder.Services.AddAntiforgery(options =>
+{
+    options.HeaderName = "X-CSRF-TOKEN";
+    options.Cookie.Name = "animehub.csrf";
+    options.Cookie.HttpOnly = true;
+    options.Cookie.SameSite = SameSiteMode.Strict;
+    options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+        ? CookieSecurePolicy.None
+        : CookieSecurePolicy.Always;
+});
+
+// CORS is environment-configured so production only trusts explicit origins.
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("DevCors", policy =>
+    options.AddPolicy(CorsPolicyName, policy =>
     {
         var origins = builder.Configuration
             .GetSection("Cors:AllowedOrigins")
-            .Get<string[]>() ?? ["http://localhost:5173"];
+            .Get<string[]>() ?? [];
+
+        if (origins.Length == 0 && builder.Environment.IsDevelopment())
+            origins = ["http://localhost:5173"];
 
         policy
             .WithOrigins(origins)
@@ -38,19 +60,70 @@ builder.Services.AddHttpClient("AniList", client =>
 builder.Services.AddDbContext<AppDbContext>(opt =>
 {
     var cs = builder.Configuration.GetConnectionString("Default");
+    if (string.IsNullOrWhiteSpace(cs))
+    {
+        throw new InvalidOperationException(
+            "ConnectionStrings:Default is not configured. Set ConnectionStrings__Default in .env, an environment variable, or .NET user-secrets before running the API or EF migrations.");
+    }
+
     opt.UseNpgsql(cs);
 });
+
+var redisConnectionString = builder.Configuration.GetConnectionString("Redis");
+if (!string.IsNullOrWhiteSpace(redisConnectionString))
+{
+    builder.Services.AddStackExchangeRedisCache(options =>
+    {
+        options.Configuration = redisConnectionString;
+        options.InstanceName = "animehub:";
+    });
+}
+else
+{
+    builder.Services.AddDistributedMemoryCache();
+}
+
+builder.Services.AddScoped<IScheduleDataService, ScheduleDataService>();
+builder.Services.AddScoped<IAniListService, AniListService>();
+builder.Services.AddScoped<IAccountEmailSender, AccountEmailSender>();
+builder.Services.AddScoped<DevDataSeeder>();
+builder.Services.AddHostedService<ScheduleRefreshService>();
 
 builder.Services
     .AddIdentity<ApplicationUser, IdentityRole<Guid>>(options =>
     {
         options.User.RequireUniqueEmail = true;
 
-        options.Password.RequiredLength = 6;
-        options.Password.RequireNonAlphanumeric = false;
-        options.Password.RequireUppercase = false;
-        options.Password.RequireLowercase = false;
-        options.Password.RequireDigit = false;
+        options.SignIn.RequireConfirmedEmail = builder.Configuration.GetValue(
+            "Identity:RequireConfirmedEmail",
+            true);
+
+        options.Lockout.AllowedForNewUsers = true;
+        options.Lockout.MaxFailedAccessAttempts = builder.Configuration.GetValue(
+            "Identity:Lockout:MaxFailedAccessAttempts",
+            builder.Environment.IsProduction() ? 5 : 8);
+        options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(builder.Configuration.GetValue(
+            "Identity:Lockout:Minutes",
+            builder.Environment.IsProduction() ? 15 : 5));
+
+        if (builder.Environment.IsProduction())
+        {
+            options.Password.RequiredLength = builder.Configuration.GetValue("Identity:Password:RequiredLength", 12);
+            options.Password.RequiredUniqueChars = builder.Configuration.GetValue("Identity:Password:RequiredUniqueChars", 6);
+            options.Password.RequireNonAlphanumeric = true;
+            options.Password.RequireUppercase = true;
+            options.Password.RequireLowercase = true;
+            options.Password.RequireDigit = true;
+        }
+        else
+        {
+            options.Password.RequiredLength = builder.Configuration.GetValue("Identity:Password:RequiredLength", 8);
+            options.Password.RequiredUniqueChars = builder.Configuration.GetValue("Identity:Password:RequiredUniqueChars", 4);
+            options.Password.RequireNonAlphanumeric = false;
+            options.Password.RequireUppercase = false;
+            options.Password.RequireLowercase = true;
+            options.Password.RequireDigit = false;
+        }
     })
     .AddEntityFrameworkStores<AppDbContext>()
     .AddDefaultTokenProviders();
@@ -81,16 +154,133 @@ builder.Services.ConfigureApplicationCookie(options =>
 
 var app = builder.Build();
 
-app.UseSwagger();
-app.UseSwaggerUI();
+using (var scope = app.Services.CreateScope())
+{
+    var seeder = scope.ServiceProvider.GetRequiredService<DevDataSeeder>();
+    await seeder.SeedAsync();
+}
 
 app.UseHttpsRedirection();
 
-app.UseCors("DevCors");
+app.UseMiddleware<CorrelationIdMiddleware>();
+
+app.UseCors(CorsPolicyName);
 
 app.UseAuthentication();
+
+app.Use(async (context, next) =>
+{
+    if (RequiresCsrfValidation(context.Request))
+    {
+        var antiforgery = context.RequestServices.GetRequiredService<IAntiforgery>();
+        try
+        {
+            await antiforgery.ValidateRequestAsync(context);
+        }
+        catch (AntiforgeryValidationException)
+        {
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await context.Response.WriteAsJsonAsync(ApiError.Validation("CSRF token is missing or invalid."));
+            return;
+        }
+    }
+
+    await next();
+});
+
 app.UseAuthorization();
 
+if (app.Environment.IsDevelopment() || app.Configuration.GetValue("Swagger:Enabled", false))
+{
+    if (app.Environment.IsProduction() && app.Configuration.GetValue("Swagger:RequireAuthentication", true))
+    {
+        app.UseWhen(
+            context => context.Request.Path.StartsWithSegments("/swagger"),
+            branch =>
+            {
+                branch.Use(async (context, next) =>
+                {
+                    if (context.User.Identity?.IsAuthenticated == true)
+                    {
+                        await next();
+                        return;
+                    }
+
+                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                });
+            });
+    }
+
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
 app.MapControllers();
+app.MapHealthChecks("/health");
 
 app.Run();
+
+static bool RequiresCsrfValidation(HttpRequest request)
+{
+    if (!request.Path.StartsWithSegments("/api"))
+        return false;
+
+    return HttpMethods.IsPost(request.Method) ||
+        HttpMethods.IsPut(request.Method) ||
+        HttpMethods.IsPatch(request.Method) ||
+        HttpMethods.IsDelete(request.Method);
+}
+
+static void LoadLocalDotEnv()
+{
+    var currentEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
+        ?? Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT");
+    if (string.Equals(currentEnvironment, Environments.Production, StringComparison.OrdinalIgnoreCase))
+        return;
+
+    var envPath = FindFileUpwards(Directory.GetCurrentDirectory(), ".env");
+    if (envPath == null)
+        return;
+
+    foreach (var rawLine in File.ReadAllLines(envPath))
+    {
+        var line = rawLine.Trim();
+        if (line.Length == 0 || line.StartsWith('#'))
+            continue;
+
+        if (line.StartsWith("export ", StringComparison.Ordinal))
+            line = line["export ".Length..].TrimStart();
+
+        var separator = line.IndexOf('=');
+        if (separator <= 0)
+            continue;
+
+        var key = line[..separator].Trim();
+        var value = line[(separator + 1)..].Trim();
+        if (key.Length == 0 || Environment.GetEnvironmentVariable(key) != null)
+            continue;
+
+        if ((value.StartsWith('"') && value.EndsWith('"')) ||
+            (value.StartsWith('\'') && value.EndsWith('\'')))
+        {
+            value = value[1..^1];
+        }
+
+        Environment.SetEnvironmentVariable(key, value);
+    }
+}
+
+static string? FindFileUpwards(string startDirectory, string fileName)
+{
+    var directory = new DirectoryInfo(startDirectory);
+    while (directory != null)
+    {
+        var candidate = Path.Combine(directory.FullName, fileName);
+        if (File.Exists(candidate))
+            return candidate;
+
+        directory = directory.Parent;
+    }
+
+    return null;
+}

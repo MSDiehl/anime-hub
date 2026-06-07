@@ -15,6 +15,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid
     // ✅ Discussions
     public DbSet<DiscussionThread> DiscussionThreads => Set<DiscussionThread>();
     public DbSet<DiscussionComment> DiscussionComments => Set<DiscussionComment>();
+    public DbSet<DiscussionReaction> DiscussionReactions => Set<DiscussionReaction>();
+    public DbSet<DiscussionReport> DiscussionReports => Set<DiscussionReport>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -36,6 +38,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid
         modelBuilder.Entity<ApplicationUser>(entity =>
         {
             entity.Property(x => x.DisplayName).HasMaxLength(80);
+            entity.Property(x => x.AvatarUrl).HasMaxLength(1000);
+            entity.Property(x => x.IsProfilePublic).HasDefaultValue(true);
         });
 
         // -------------------------
@@ -47,9 +51,14 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid
 
             entity.HasIndex(x => new { x.AniListId, x.EpisodeNumber, x.CreatedUtc });
             entity.HasIndex(x => x.UserId);
+            entity.HasIndex(x => new { x.Category, x.LastActivityUtc });
+            entity.HasIndex(x => x.IsPinned);
+            entity.HasIndex(x => x.IsDeleted);
 
             entity.Property(x => x.Title).HasMaxLength(200);
             entity.Property(x => x.Body).HasMaxLength(5000);
+            entity.Property(x => x.Category).HasMaxLength(80);
+            entity.Property(x => x.TagCsv).HasMaxLength(500);
 
             entity.HasMany(x => x.Comments)
                 .WithOne(c => c.Thread)
@@ -63,8 +72,59 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid
 
             entity.HasIndex(x => new { x.ThreadId, x.CreatedUtc });
             entity.HasIndex(x => x.UserId);
+            entity.HasIndex(x => x.IsDeleted);
 
             entity.Property(x => x.Body).HasMaxLength(3000);
+        });
+
+        modelBuilder.Entity<DiscussionReaction>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+
+            entity.HasIndex(x => new { x.ThreadId, x.UserId, x.Type })
+                .IsUnique()
+                .HasFilter("\"ThreadId\" IS NOT NULL");
+            entity.HasIndex(x => new { x.CommentId, x.UserId, x.Type })
+                .IsUnique()
+                .HasFilter("\"CommentId\" IS NOT NULL");
+            entity.HasIndex(x => x.UserId);
+
+            entity.Property(x => x.Type).HasMaxLength(40);
+
+            entity.HasOne(x => x.Thread)
+                .WithMany()
+                .HasForeignKey(x => x.ThreadId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(x => x.Comment)
+                .WithMany()
+                .HasForeignKey(x => x.CommentId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<DiscussionReport>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+
+            entity.HasIndex(x => new { x.ThreadId, x.ReporterUserId })
+                .IsUnique()
+                .HasFilter("\"ThreadId\" IS NOT NULL");
+            entity.HasIndex(x => new { x.CommentId, x.ReporterUserId })
+                .IsUnique()
+                .HasFilter("\"CommentId\" IS NOT NULL");
+            entity.HasIndex(x => x.ReporterUserId);
+
+            entity.Property(x => x.Reason).HasMaxLength(1000);
+
+            entity.HasOne(x => x.Thread)
+                .WithMany()
+                .HasForeignKey(x => x.ThreadId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(x => x.Comment)
+                .WithMany()
+                .HasForeignKey(x => x.CommentId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

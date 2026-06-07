@@ -1,16 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  CartesianGrid,
-} from "recharts";
+import { toPagedResult } from "../api/client";
+import { csrfFetch } from "../api/csrf";
+import AppNav from "../components/AppNav";
+import { CoverFallback, EmptyState, SkeletonBlock, useConfirm, useToast } from "../components/Feedback";
+import { PlusIcon, SendIcon, StarIcon, TrashIcon } from "../components/Icons";
 import { getErrorMessage, readApiError } from "../utils/apiError";
 import { sanitizeAniListHtml } from "../utils/sanitizeAniListHtml";
+import AnimeOverviewPanel from "./anime-details/AnimeOverviewPanel";
+import AnimeRelationsPanel from "./anime-details/AnimeRelationsPanel";
+import AnimeTrendsPanel from "./anime-details/AnimeTrendsPanel";
 import "./AnimeDetails.css";
 
 type RelatedSeason = {
@@ -180,6 +179,10 @@ type ThreadSummary = {
   commentCount: number;
 };
 
+type ThreadPage = {
+  items: ThreadSummary[];
+};
+
 type CommentDto = {
   id: string;
   threadId: string;
@@ -204,6 +207,8 @@ type Props = { onLogout: () => void | Promise<void> };
 export default function AnimeDetails({ onLogout }: Props) {
   const nav = useNavigate();
   const { aniListId } = useParams();
+  const { confirm } = useConfirm();
+  const { pushToast } = useToast();
   const routeId = Number(aniListId);
 
   // allows “switch season without page reload”
@@ -292,7 +297,7 @@ export default function AnimeDetails({ onLogout }: Props) {
       setData(null);
 
       try {
-        const res = await fetch(`/api/anime/${activeId}`, {
+        const res = await csrfFetch(`/api/anime/${activeId}`, {
           credentials: "include",
         });
         if (!res.ok) {
@@ -334,7 +339,7 @@ export default function AnimeDetails({ onLogout }: Props) {
       setTrackedShow(null);
 
       try {
-        const res = await fetch(`/api/tracked/${activeId}`, {
+        const res = await csrfFetch(`/api/tracked/${activeId}`, {
           credentials: "include",
         });
 
@@ -403,15 +408,51 @@ export default function AnimeDetails({ onLogout }: Props) {
     };
   }
 
+  function optimisticTrackedShow(overrides: Partial<TrackedShow> = {}) {
+    const payload = trackingPayload(overrides);
+    if (!payload) return null;
+
+    return {
+      id: `optimistic-${activeId}`,
+      aniListId: payload.aniListId,
+      title: payload.title,
+      coverImageUrl: payload.coverImageUrl,
+      format: payload.format,
+      status: payload.status,
+      episodes: payload.episodes,
+      season: payload.season,
+      seasonYear: payload.seasonYear,
+      averageScore: payload.averageScore,
+      popularity: payload.popularity,
+      genres: payload.genres ?? [],
+      episodeProgress: overrides.episodeProgress ?? 0,
+      nextEpisode: null,
+      personalRating: null,
+      isFavorite: overrides.isFavorite ?? false,
+      notes: null,
+      review: null,
+      rewatchCount: 0,
+      startedOn: null,
+      completedOn: null,
+      createdUtc: new Date().toISOString(),
+      updatedUtc: null,
+      ...overrides,
+      trackingStatus: (overrides.trackingStatus ?? payload.trackingStatus) as TrackingStatus,
+    } as TrackedShow;
+  }
+
   async function trackCurrent(overrides: Partial<TrackedShow> = {}) {
     const payload = trackingPayload(overrides);
     if (!payload) return;
 
+    const previousTrackedShow = trackedShow;
+    const optimistic = optimisticTrackedShow(overrides);
     setTrackingSaving(true);
     setTrackingError(null);
+    if (optimistic) setTrackedShow(optimistic);
 
     try {
-      const res = await fetch("/api/tracked", {
+      const res = await csrfFetch("/api/tracked", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -419,10 +460,15 @@ export default function AnimeDetails({ onLogout }: Props) {
       });
 
       if (res.status === 409) {
-        const existing = await fetch(`/api/tracked/${activeId}`, {
+        const existing = await csrfFetch(`/api/tracked/${activeId}`, {
           credentials: "include",
         });
-        if (existing.ok) setTrackedShow((await existing.json()) as TrackedShow);
+        if (existing.ok) {
+          setTrackedShow((await existing.json()) as TrackedShow);
+        } else {
+          setTrackedShow(previousTrackedShow);
+        }
+        pushToast("Show is already tracked.", "info");
         return;
       }
 
@@ -431,8 +477,12 @@ export default function AnimeDetails({ onLogout }: Props) {
       }
 
       setTrackedShow((await res.json()) as TrackedShow);
+      pushToast("Show tracked.", "success");
     } catch (e: unknown) {
-      setTrackingError(getErrorMessage(e, "Failed to track show"));
+      const message = getErrorMessage(e, "Failed to track show");
+      setTrackedShow(previousTrackedShow);
+      setTrackingError(message);
+      pushToast(message, "error");
     } finally {
       setTrackingSaving(false);
     }
@@ -446,9 +496,11 @@ export default function AnimeDetails({ onLogout }: Props) {
 
     setTrackingSaving(true);
     setTrackingError(null);
+    const previousTrackedShow = trackedShow;
+    setTrackedShow({ ...trackedShow, ...patch });
 
     try {
-      const res = await fetch(`/api/tracked/${activeId}`, {
+      const res = await csrfFetch(`/api/tracked/${activeId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -461,7 +513,10 @@ export default function AnimeDetails({ onLogout }: Props) {
 
       setTrackedShow((await res.json()) as TrackedShow);
     } catch (e: unknown) {
-      setTrackingError(getErrorMessage(e, "Failed to update show"));
+      const message = getErrorMessage(e, "Failed to update show");
+      setTrackedShow(previousTrackedShow);
+      setTrackingError(message);
+      pushToast(message, "error");
     } finally {
       setTrackingSaving(false);
     }
@@ -469,12 +524,21 @@ export default function AnimeDetails({ onLogout }: Props) {
 
   async function untrackCurrent() {
     if (!trackedShow) return;
+    const confirmed = await confirm({
+      title: "Untrack show?",
+      message: "This removes the show from your tracked list.",
+      confirmLabel: "Untrack",
+      danger: true,
+    });
+    if (!confirmed) return;
 
+    const previousTrackedShow = trackedShow;
     setTrackingSaving(true);
     setTrackingError(null);
+    setTrackedShow(null);
 
     try {
-      const res = await fetch(`/api/tracked/${activeId}`, {
+      const res = await csrfFetch(`/api/tracked/${activeId}`, {
         method: "DELETE",
         credentials: "include",
       });
@@ -484,8 +548,12 @@ export default function AnimeDetails({ onLogout }: Props) {
       }
 
       setTrackedShow(null);
+      pushToast("Show untracked.", "success");
     } catch (e: unknown) {
-      setTrackingError(getErrorMessage(e, "Failed to untrack show"));
+      const message = getErrorMessage(e, "Failed to untrack show");
+      setTrackedShow(previousTrackedShow);
+      setTrackingError(message);
+      pushToast(message, "error");
     } finally {
       setTrackingSaving(false);
     }
@@ -496,14 +564,14 @@ export default function AnimeDetails({ onLogout }: Props) {
     setThreadsErr(null);
     try {
       const epQ = discEpisode ? `?episode=${discEpisode}` : "";
-      const res = await fetch(`/api/discussions/anime/${activeId}${epQ}`, {
+      const res = await csrfFetch(`/api/discussions/anime/${activeId}${epQ}`, {
         credentials: "include",
       });
       if (!res.ok) {
         throw new Error(await readApiError(res, "Failed to load discussions"));
       }
-      const json = (await res.json()) as ThreadSummary[];
-      setThreads(json);
+      const json = (await res.json()) as ThreadPage | ThreadSummary[];
+      setThreads(toPagedResult(json, 1, 25).items);
     } catch (e: unknown) {
       setThreadsErr(getErrorMessage(e, "Failed to load discussions"));
       setThreads([]);
@@ -512,12 +580,12 @@ export default function AnimeDetails({ onLogout }: Props) {
     }
   }
 
-  async function loadThread(threadId: string) {
-    setThreadLoading(true);
+  async function loadThread(threadId: string, showLoading = true) {
+    if (showLoading) setThreadLoading(true);
     setThreadErr(null);
-    setThread(null);
+    if (showLoading) setThread(null);
     try {
-      const res = await fetch(`/api/discussions/thread/${threadId}`, {
+      const res = await csrfFetch(`/api/discussions/thread/${threadId}`, {
         credentials: "include",
       });
       if (!res.ok) {
@@ -528,7 +596,7 @@ export default function AnimeDetails({ onLogout }: Props) {
     } catch (e: unknown) {
       setThreadErr(getErrorMessage(e, "Failed to load thread"));
     } finally {
-      setThreadLoading(false);
+      if (showLoading) setThreadLoading(false);
     }
   }
 
@@ -541,7 +609,6 @@ export default function AnimeDetails({ onLogout }: Props) {
   useEffect(() => {
     if (!selectedThreadId) return;
     loadThread(selectedThreadId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedThreadId]);
 
   useEffect(() => {
@@ -551,44 +618,81 @@ export default function AnimeDetails({ onLogout }: Props) {
   async function createThread() {
     if (!newTitle.trim() || !newBody.trim()) return;
 
+    const title = newTitle.trim();
+    const body = newBody.trim();
+    const previousThreads = threads;
+    const optimisticThread: ThreadSummary = {
+      id: `optimistic-${Date.now()}`,
+      aniListId: activeId,
+      episodeNumber: discEpisode,
+      title,
+      createdUtc: new Date().toISOString(),
+      authorDisplayName: "You",
+      commentCount: 0,
+    };
+
     setPostingThread(true);
     setThreadsErr(null);
+    setNewTitle("");
+    setNewBody("");
+    setThreads([optimisticThread, ...threads]);
+
     try {
       const epQ = discEpisode ? `?episode=${discEpisode}` : "";
-      const res = await fetch(`/api/discussions/anime/${activeId}${epQ}`, {
+      const res = await csrfFetch(`/api/discussions/anime/${activeId}${epQ}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ title: newTitle, body: newBody }),
+        body: JSON.stringify({ title, body }),
       });
 
       if (!res.ok) {
         throw new Error(await readApiError(res, "Failed to create thread"));
       }
 
-      setNewTitle("");
-      setNewBody("");
       await loadThreads();
+      pushToast("Thread posted.", "success");
     } catch (e: unknown) {
-      setThreadsErr(getErrorMessage(e, "Failed to create thread"));
+      const message = getErrorMessage(e, "Failed to create thread");
+      setThreads(previousThreads);
+      setNewTitle(title);
+      setNewBody(body);
+      setThreadsErr(message);
+      pushToast(message, "error");
     } finally {
       setPostingThread(false);
     }
   }
 
   async function postReply() {
-    if (!selectedThreadId || !replyBody.trim()) return;
+    if (!selectedThreadId || !thread || !replyBody.trim()) return;
+
+    const body = replyBody.trim();
+    const previousThread = thread;
+    const optimisticComment: CommentDto = {
+      id: `optimistic-${Date.now()}`,
+      threadId: selectedThreadId,
+      body,
+      createdUtc: new Date().toISOString(),
+      authorDisplayName: "You",
+    };
 
     setPostingReply(true);
     setThreadErr(null);
+    setReplyBody("");
+    setThread({
+      ...thread,
+      comments: [...thread.comments, optimisticComment],
+    });
+
     try {
-      const res = await fetch(
+      const res = await csrfFetch(
         `/api/discussions/thread/${selectedThreadId}/comments`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ body: replyBody }),
+          body: JSON.stringify({ body }),
         },
       );
 
@@ -596,11 +700,15 @@ export default function AnimeDetails({ onLogout }: Props) {
         throw new Error(await readApiError(res, "Failed to post reply"));
       }
 
-      setReplyBody("");
-      await loadThread(selectedThreadId);
+      await loadThread(selectedThreadId, false);
       await loadThreads();
+      pushToast("Reply posted.", "success");
     } catch (e: unknown) {
-      setThreadErr(getErrorMessage(e, "Failed to post reply"));
+      const message = getErrorMessage(e, "Failed to post reply");
+      setThread(previousThread);
+      setReplyBody(body);
+      setThreadErr(message);
+      pushToast(message, "error");
     } finally {
       setPostingReply(false);
     }
@@ -614,8 +722,11 @@ export default function AnimeDetails({ onLogout }: Props) {
           <div className="adHalftone" />
           <div className="adInkWash" />
         </div>
+        <AppNav onLogout={onLogout} />
         <div className="adLoadingWrap">
-          <div className="adLoadingCard mangaPanel">Loading…</div>
+          <div className="adLoadingCard mangaPanel">
+            <SkeletonBlock rows={6} />
+          </div>
         </div>
       </div>
     );
@@ -628,16 +739,15 @@ export default function AnimeDetails({ onLogout }: Props) {
           <div className="adHalftone" />
           <div className="adInkWash" />
         </div>
+        <AppNav onLogout={onLogout} />
         <div className="adLoadingWrap">
           <div className="adLoadingCard mangaPanel">
-            <div className="adStateTitle">Couldn’t load anime details</div>
-            <div className="adStateText">{detailsError}</div>
-            <button
-              className="adPillBtn adStateAction"
-              onClick={() => setDetailsReloadKey((value) => value + 1)}
-            >
-              Retry
-            </button>
+            <EmptyState
+              actionLabel="Retry"
+              message={detailsError}
+              onAction={() => setDetailsReloadKey((value) => value + 1)}
+              title="Could not load anime details"
+            />
           </div>
         </div>
       </div>
@@ -651,8 +761,16 @@ export default function AnimeDetails({ onLogout }: Props) {
           <div className="adHalftone" />
           <div className="adInkWash" />
         </div>
+        <AppNav onLogout={onLogout} />
         <div className="adLoadingWrap">
-          <div className="adLoadingCard mangaPanel">Not found.</div>
+          <div className="adLoadingCard mangaPanel">
+            <EmptyState
+              actionLabel="Back to search"
+              message="This anime could not be found."
+              onAction={() => nav("/search")}
+              title="Not found"
+            />
+          </div>
         </div>
       </div>
     );
@@ -678,19 +796,7 @@ export default function AnimeDetails({ onLogout }: Props) {
         <div className="adInkWash" />
       </div>
 
-      <header className="adTopBar">
-        <div className="adBrand" onClick={() => nav("/")}>
-          AnimeHub
-        </div>
-        <div className="adTopBarRight">
-          <button className="adPillBtn" onClick={() => nav("/")}>
-            Back
-          </button>
-          <button className="adPillBtn" onClick={onLogout}>
-            Logout
-          </button>
-        </div>
-      </header>
+      <AppNav onLogout={onLogout} />
 
       <div className="adHero">
         <div
@@ -700,7 +806,9 @@ export default function AnimeDetails({ onLogout }: Props) {
               ? `url(${data.bannerImageUrl})`
               : undefined,
           }}
-        />
+        >
+          {!data.bannerImageUrl && <CoverFallback label="No banner" />}
+        </div>
         <div className="adHeroOverlay" />
         <div className="adHeroInner">
           <div
@@ -710,7 +818,9 @@ export default function AnimeDetails({ onLogout }: Props) {
                 ? `url(${data.coverImageUrl})`
                 : undefined,
             }}
-          />
+          >
+            {!data.coverImageUrl && <CoverFallback label="No cover" />}
+          </div>
 
           <div className="adHeroText mangaPanel">
             <div className="adPanelTag" aria-hidden="true">
@@ -765,55 +875,11 @@ export default function AnimeDetails({ onLogout }: Props) {
             ) : null}
           </div>
 
-          <div className="adSeasonPanel mangaPanel">
-            <div className="adPanelTag" aria-hidden="true">
-              RELATIONS
-            </div>
-
-            {relations.length === 0 ? (
-              <div className="adSeasonEmpty">No related anime found yet.</div>
-            ) : (
-              <div className="adSeasonList">
-                {relations.map((s) => {
-                  const active = s.aniListId === data.aniListId;
-                  return (
-                    <button
-                      key={s.aniListId}
-                      onClick={() => setActiveId(s.aniListId)}
-                      className={[
-                        "adSeasonItem",
-                        active ? "isActive" : "",
-                      ].join(" ")}
-                      title={s.title}
-                    >
-                      <div
-                        className="adSeasonThumb"
-                        style={{
-                          backgroundImage: s.coverImageUrl
-                            ? `url(${s.coverImageUrl})`
-                            : undefined,
-                        }}
-                      />
-                      <div className="adSeasonText">
-                        <div className="adSeasonName">{s.title}</div>
-                        <div className="adSeasonMeta">
-                          {[
-                            humanizeEnum(s.relationType),
-                            s.format,
-                            s.season || s.seasonYear
-                              ? `${s.season ?? ""} ${s.seasonYear ?? ""}`.trim()
-                              : null,
-                          ]
-                            .filter(Boolean)
-                            .join(" • ")}
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          <AnimeRelationsPanel
+            activeAniListId={data.aniListId}
+            relations={relations}
+            onSelect={setActiveId}
+          />
         </div>
       </div>
 
@@ -832,7 +898,7 @@ export default function AnimeDetails({ onLogout }: Props) {
               </h2>
               <div className="adTrackingMeta">
                 {trackingLoading
-                  ? "Loading tracking state..."
+                  ? <SkeletonBlock rows={1} />
                   : isTracked
                     ? `Episode ${currentProgress}${maxEpisodes ? ` / ${maxEpisodes}` : ""}`
                     : "Add it to your list to save progress, rating, notes, and dates."}
@@ -846,7 +912,7 @@ export default function AnimeDetails({ onLogout }: Props) {
                   onClick={untrackCurrent}
                   disabled={trackingSaving}
                 >
-                  {trackingSaving ? "Saving..." : "Untrack"}
+                  {trackingSaving ? "Saving" : <><TrashIcon size={16} /> Untrack</>}
                 </button>
               ) : (
                 <button
@@ -854,7 +920,7 @@ export default function AnimeDetails({ onLogout }: Props) {
                   onClick={() => trackCurrent()}
                   disabled={trackingSaving || trackingLoading}
                 >
-                  {trackingSaving ? "Saving..." : "Track"}
+                  {trackingSaving ? "Saving" : <><PlusIcon size={16} /> Track</>}
                 </button>
               )}
 
@@ -868,7 +934,7 @@ export default function AnimeDetails({ onLogout }: Props) {
                 }
                 disabled={trackingSaving || trackingLoading}
               >
-                {trackedShow?.isFavorite ? "Favorited" : "Favorite"}
+                <StarIcon size={16} /> {trackedShow?.isFavorite ? "Favorited" : "Favorite"}
               </button>
             </div>
           </div>
@@ -999,62 +1065,9 @@ export default function AnimeDetails({ onLogout }: Props) {
         </section>
 
         <div className="adGrid">
-          <section className="adPanel mangaPanel">
-            <div className="adPanelTag" aria-hidden="true">
-              Overview
-            </div>
+          <AnimeOverviewPanel sanitizedDescription={sanitizedDescription} />
 
-            <div
-              className="adDesc"
-              dangerouslySetInnerHTML={{ __html: sanitizedDescription }}
-            />
-          </section>
-
-          <section className="adPanel mangaPanel">
-            <div className="adPanelTag" aria-hidden="true">
-              Trends
-            </div>
-
-            <div className="adChartBlock">
-              <div className="adChartLabel">Score by related anime</div>
-              <div className="adChartWrap">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
-                    <XAxis dataKey="t" />
-                    <YAxis />
-                    <Tooltip />
-                    <Line
-                      type="monotone"
-                      dataKey="score"
-                      dot={false}
-                      strokeWidth={2}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div className="adChartBlock">
-              <div className="adChartLabel">Popularity by related anime</div>
-              <div className="adChartWrap">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
-                    <XAxis dataKey="t" />
-                    <YAxis />
-                    <Tooltip />
-                    <Line
-                      type="monotone"
-                      dataKey="pop"
-                      dot={false}
-                      strokeWidth={2}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </section>
+          <AnimeTrendsPanel data={chartData} />
         </div>
 
         <div className="adInfoGrid">
@@ -1134,7 +1147,10 @@ export default function AnimeDetails({ onLogout }: Props) {
                 Watch trailer
               </a>
             ) : (
-              <div className="adSeasonEmpty">No trailer listed.</div>
+              <EmptyState
+                message="No trailer is listed for this title yet."
+                title="No trailer"
+              />
             )}
           </section>
         </div>
@@ -1147,7 +1163,10 @@ export default function AnimeDetails({ onLogout }: Props) {
 
             <div className="adPeopleList">
               {(data.characters ?? []).length === 0 ? (
-                <div className="adSeasonEmpty">No characters listed.</div>
+                <EmptyState
+                  message="Character data is not available for this title yet."
+                  title="No characters listed"
+                />
               ) : (
                 data.characters?.map((character) => (
                   <div key={character.aniListId} className="adPersonCard">
@@ -1158,7 +1177,9 @@ export default function AnimeDetails({ onLogout }: Props) {
                           ? `url(${character.imageUrl})`
                           : undefined,
                       }}
-                    />
+                    >
+                      {!character.imageUrl && <CoverFallback label="No image" />}
+                    </div>
                     <div className="adPersonText">
                       <b>{character.name}</b>
                       <span>{humanizeEnum(character.role)}</span>
@@ -1179,7 +1200,10 @@ export default function AnimeDetails({ onLogout }: Props) {
 
             <div className="adPeopleList">
               {(data.staff ?? []).length === 0 ? (
-                <div className="adSeasonEmpty">No staff listed.</div>
+                <EmptyState
+                  message="Staff data is not available for this title yet."
+                  title="No staff listed"
+                />
               ) : (
                 data.staff?.map((member) => (
                   <div key={`${member.aniListId}-${member.role}`} className="adPersonCard">
@@ -1190,7 +1214,9 @@ export default function AnimeDetails({ onLogout }: Props) {
                           ? `url(${member.imageUrl})`
                           : undefined,
                       }}
-                    />
+                    >
+                      {!member.imageUrl && <CoverFallback label="No image" />}
+                    </div>
                     <div className="adPersonText">
                       <b>{member.name}</b>
                       <span>{member.role ?? "Staff"}</span>
@@ -1229,10 +1255,18 @@ export default function AnimeDetails({ onLogout }: Props) {
           </div>
 
           {!episodes.length ? (
-            <div className="adNote">
-              AniList didn’t return an episode count for this show yet — we’ll
-              still support community episode lists later.
-            </div>
+            <EmptyState
+              actionLabel="Open discussion"
+              message="AniList did not return an episode count, but general discussion is still available."
+              onAction={() => {
+                setDiscEpisode(null);
+                document.getElementById("discussion-panel")?.scrollIntoView({
+                  behavior: "smooth",
+                  block: "start",
+                });
+              }}
+              title="No episode count"
+            />
           ) : (
             <div className="adEpisodeGrid">
               {episodes.map((ep) => {
@@ -1400,29 +1434,46 @@ export default function AnimeDetails({ onLogout }: Props) {
                     postingThread || !newTitle.trim() || !newBody.trim()
                   }
                 >
-                  {postingThread ? "Posting…" : "Post thread"}
+                  {postingThread ? "Posting" : <><SendIcon size={16} /> Post thread</>}
                 </button>
               </div>
 
               <div className="adThreadList">
                 <div className="adThreadListHeader">
                   Threads
-                  <span className="adThreadListMeta">
-                    {threadsLoading ? "Loading…" : `${threads.length}`}
-                  </span>
+                  <div className="adThreadListMeta">
+                    {threadsLoading ? <SkeletonBlock rows={1} /> : `${threads.length}`}
+                  </div>
                 </div>
 
-                {!threadsLoading && threads.length === 0 ? (
+                {threadsLoading ? (
+                  Array.from({ length: 3 }, (_, index) => (
+                    <div className="adThreadItem adThreadSkeleton" key={index}>
+                      <SkeletonBlock rows={2} />
+                    </div>
+                  ))
+                ) : threads.length === 0 ? (
                   <div className="adThreadEmpty">
-                    No threads yet. Be the first to start one.
+                    <EmptyState
+                      actionLabel="Start a thread"
+                      message="Be the first person to open a conversation for this scope."
+                      onAction={() => document.querySelector<HTMLInputElement>(".adCreateTitle")?.focus()}
+                      title="No threads yet"
+                    />
                   </div>
                 ) : (
                   threads.map((t) => {
                     const active = selectedThreadId === t.id;
+                    const pending = t.id.startsWith("optimistic-");
                     return (
                       <button
                         key={t.id}
-                        className={"adThreadItem" + (active ? " isActive" : "")}
+                        className={[
+                          "adThreadItem",
+                          active ? "isActive" : "",
+                          pending ? "isPending" : "",
+                        ].join(" ")}
+                        disabled={pending}
                         onClick={() => setSelectedThreadId(t.id)}
                         title={t.title}
                       >
@@ -1451,16 +1502,31 @@ export default function AnimeDetails({ onLogout }: Props) {
             <div className="adDiscussionRight">
               {!selectedThreadId ? (
                 <div className="adThreadPlaceholder">
-                  Pick a thread to read and reply.
+                  <EmptyState
+                    message="Select a thread from the list to read and reply."
+                    title="Pick a thread"
+                  />
                 </div>
               ) : threadLoading ? (
-                <div className="adThreadPlaceholder">Loading thread…</div>
+                <div className="adThreadPlaceholder">
+                  <SkeletonBlock rows={5} />
+                </div>
               ) : threadErr ? (
                 <div className="adThreadPlaceholder">
-                  <b>WHAM!</b> {threadErr}
+                  <EmptyState
+                    actionLabel="Retry"
+                    message={threadErr}
+                    onAction={() => selectedThreadId && loadThread(selectedThreadId)}
+                    title="Could not load thread"
+                  />
                 </div>
               ) : !thread ? (
-                <div className="adThreadPlaceholder">Thread not found.</div>
+                <div className="adThreadPlaceholder">
+                  <EmptyState
+                    message="This thread may have been deleted."
+                    title="Thread not found"
+                  />
+                </div>
               ) : (
                 <div className="adThreadView">
                   <div className="adThreadHeader">
@@ -1504,11 +1570,21 @@ export default function AnimeDetails({ onLogout }: Props) {
                   <div className="adRepliesList">
                     {spoilerSafe && thread.episodeNumber && !threadSpoilersRevealed ? (
                       <div className="adThreadEmpty">
-                        Replies hidden until the thread is revealed.
+                        <EmptyState
+                          actionLabel="Reveal thread"
+                          message="Replies are hidden until you reveal this episode thread."
+                          onAction={() => setThreadSpoilersRevealed(true)}
+                          title="Replies hidden"
+                        />
                       </div>
                     ) : thread.comments.length === 0 ? (
                       <div className="adThreadEmpty">
-                        No replies yet. Drop one.
+                        <EmptyState
+                          actionLabel="Write a reply"
+                          message="Add the first reply to this thread."
+                          onAction={() => document.querySelector<HTMLTextAreaElement>(".adReplyInput")?.focus()}
+                          title="No replies yet"
+                        />
                       </div>
                     ) : (
                       thread.comments.map((c) => (
@@ -1544,7 +1620,7 @@ export default function AnimeDetails({ onLogout }: Props) {
                       onClick={postReply}
                       disabled={postingReply || !replyBody.trim()}
                     >
-                      {postingReply ? "Posting…" : "Reply"}
+                      {postingReply ? "Posting" : <><SendIcon size={16} /> Reply</>}
                     </button>
 
                     <div className="adReplyHint">

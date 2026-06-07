@@ -13,6 +13,11 @@
 # --- logs ---
 *.log
 
+# --- local secrets ---
+.env
+.env.*
+!.env.example
+
 # --- Node / Vite ---
 **/node_modules/
 **/dist/

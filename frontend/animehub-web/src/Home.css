@@ -557,6 +557,26 @@
   font-weight: 900;
 }
 
+.homePager {
+  margin-top: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #fff;
+  font-weight: 1000;
+}
+
+.homePager .homeClearBtn {
+  min-width: 110px;
+}
+
+.homeClearBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
 /* --- Responsive --- */
 
 @media (max-width: 520px) {
