@@ -121,10 +121,12 @@ export default function Home({ onLogout }: HomeProps) {
       seasonYear: x.seasonYear,
       averageScore: x.averageScore,
       popularity: x.popularity,
-      genres: [],
+      genres: x.genres ?? [],
       trackingStatus: "PlanToWatch",
       episodeProgress: 0,
       isFavorite: false,
+      customListName: null,
+      userTags: [],
       rewatchCount: 0,
       createdUtc: new Date().toISOString(),
     };
@@ -147,6 +149,7 @@ export default function Home({ onLogout }: HomeProps) {
         seasonYear: x.seasonYear,
         averageScore: x.averageScore,
         popularity: x.popularity,
+        genres: x.genres ?? [],
       });
 
       await queryClient.invalidateQueries({ queryKey: ["tracked"] });

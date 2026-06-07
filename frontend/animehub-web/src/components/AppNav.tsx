@@ -9,12 +9,13 @@ import {
   MessageSquareIcon,
   MoonIcon,
   SearchIcon,
+  StarIcon,
   SunIcon,
   XIcon,
 } from "./Icons";
 import { useTheme } from "./Theme";
 
-type NavKey = "dashboard" | "search" | "forums" | "schedule";
+type NavKey = "dashboard" | "search" | "discover" | "forums" | "schedule";
 
 type Props = {
   active?: NavKey;
@@ -29,6 +30,7 @@ const navItems: Array<{
 }> = [
   { key: "dashboard", label: "Dashboard", to: "/dashboard", Icon: LayoutDashboardIcon },
   { key: "search", label: "Search", to: "/search", Icon: SearchIcon },
+  { key: "discover", label: "Discover", to: "/discover", Icon: StarIcon },
   { key: "forums", label: "Forums", to: "/forums", Icon: MessageSquareIcon },
   { key: "schedule", label: "Schedule", to: "/schedule", Icon: CalendarIcon },
 ];

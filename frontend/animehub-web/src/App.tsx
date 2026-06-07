@@ -4,6 +4,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import Home from "./Home";
 import AnimeDetails from "./pages/AnimeDetails";
 import Dashboard from "./pages/Dashboard";
+import Discovery from "./pages/Discovery";
 import Forums from "./pages/Forums";
 import ForumThread from "./pages/ForumThread";
 import Schedule from "./pages/Schedule";
@@ -68,6 +69,9 @@ export default function App() {
 
       {/* Search page */}
       <Route path="/search" element={<Home onLogout={logout} />} />
+
+      {/* Discovery */}
+      <Route path="/discover" element={<Discovery onLogout={logout} />} />
 
       {/* Schedule */}
       <Route path="/schedule" element={<Schedule onLogout={logout} />} />

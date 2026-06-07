@@ -41,6 +41,8 @@ public class TrackedShowsController : ControllerBase
         [FromQuery] string? format = null,
         [FromQuery] string? genre = null,
         [FromQuery] string? season = null,
+        [FromQuery] string? customList = null,
+        [FromQuery] string? tag = null,
         [FromQuery] int? year = null,
         [FromQuery] bool favoritesOnly = false)
     {
@@ -51,7 +53,7 @@ public class TrackedShowsController : ControllerBase
             .Where(x => x.UserId == uid)
             .ToListAsync();
 
-        var filtered = ApplyFilters(items, q, trackingStatus, format, genre, season, year, favoritesOnly);
+        var filtered = ApplyFilters(items, q, trackingStatus, format, genre, season, customList, tag, year, favoritesOnly);
         var sorted = ApplySort(filtered, sort).Select(ToDto).ToList();
 
         return Ok(sorted);
@@ -155,6 +157,8 @@ public class TrackedShowsController : ControllerBase
             IsFavorite = req.IsFavorite ?? false,
             Notes = NormalizeText(req.Notes),
             Review = NormalizeText(req.Review),
+            CustomListName = NormalizeOptional(req.CustomListName, 80),
+            UserTagCsv = JoinTags(NormalizeUserTags(req.UserTags)),
             RewatchCount = Math.Max(0, req.RewatchCount ?? 0),
             StartedOn = req.StartedOn,
             CompletedOn = req.CompletedOn
@@ -278,6 +282,8 @@ public class TrackedShowsController : ControllerBase
         string? format,
         string? genre,
         string? season,
+        string? customList,
+        string? tag,
         int? year,
         bool favoritesOnly)
     {
@@ -300,6 +306,12 @@ public class TrackedShowsController : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(season) && !string.Equals(season, "All", StringComparison.OrdinalIgnoreCase))
             query = query.Where(x => string.Equals(x.Season, season, StringComparison.OrdinalIgnoreCase));
+
+        if (!string.IsNullOrWhiteSpace(customList) && !string.Equals(customList, "All", StringComparison.OrdinalIgnoreCase))
+            query = query.Where(x => string.Equals(x.CustomListName, customList, StringComparison.OrdinalIgnoreCase));
+
+        if (!string.IsNullOrWhiteSpace(tag) && !string.Equals(tag, "All", StringComparison.OrdinalIgnoreCase))
+            query = query.Where(x => SplitTags(x.UserTagCsv).Any(t => string.Equals(t, tag, StringComparison.OrdinalIgnoreCase)));
 
         if (year is not null)
             query = query.Where(x => x.SeasonYear == year);
@@ -349,6 +361,8 @@ public class TrackedShowsController : ControllerBase
         if (req.IsFavoriteSet) entity.IsFavorite = req.IsFavorite ?? false;
         if (req.NotesSet) entity.Notes = NormalizeText(req.Notes);
         if (req.ReviewSet) entity.Review = NormalizeText(req.Review);
+        if (req.CustomListNameSet) entity.CustomListName = NormalizeOptional(req.CustomListName, 80);
+        if (req.UserTagsSet) entity.UserTagCsv = JoinTags(NormalizeUserTags(req.UserTags));
         if (req.RewatchCountSet) entity.RewatchCount = Math.Max(0, req.RewatchCount ?? 0);
         if (req.StartedOnSet) entity.StartedOn = req.StartedOn;
         if (req.CompletedOnSet) entity.CompletedOn = req.CompletedOn;
@@ -381,6 +395,13 @@ public class TrackedShowsController : ControllerBase
     private static string? NormalizeText(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
+    private static string? NormalizeOptional(string? value, int maxLength)
+    {
+        var trimmed = value?.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed)) return null;
+        return trimmed.Length <= maxLength ? trimmed : trimmed[..maxLength];
+    }
+
     private static string? JoinGenres(IEnumerable<string>? genres)
     {
         var clean = genres?
@@ -397,6 +418,27 @@ public class TrackedShowsController : ControllerBase
         string.IsNullOrWhiteSpace(genreCsv)
             ? new List<string>()
             : genreCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+
+    private static List<string> NormalizeUserTags(IEnumerable<string>? tags)
+    {
+        return (tags ?? Array.Empty<string>())
+            .Select(x => x.Trim().TrimStart('#').ToLowerInvariant())
+            .Where(x => x.Length is > 0 and <= 40)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(20)
+            .ToList();
+    }
+
+    private static string? JoinTags(IEnumerable<string> tags)
+    {
+        var clean = tags.ToList();
+        return clean.Count == 0 ? null : string.Join(",", clean);
+    }
+
+    private static List<string> SplitTags(string? tagCsv) =>
+        string.IsNullOrWhiteSpace(tagCsv)
+            ? new List<string>()
+            : tagCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
 
     private static TrackedShowDto ToDto(TrackedShow x) => new()
     {
@@ -418,6 +460,8 @@ public class TrackedShowsController : ControllerBase
         IsFavorite = x.IsFavorite,
         Notes = x.Notes,
         Review = x.Review,
+        CustomListName = x.CustomListName,
+        UserTags = SplitTags(x.UserTagCsv),
         RewatchCount = x.RewatchCount,
         StartedOn = x.StartedOn,
         CompletedOn = x.CompletedOn,
@@ -429,7 +473,7 @@ public class TrackedShowsController : ControllerBase
     private static string BuildCsv(IEnumerable<TrackedShowDto> items)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("aniListId,title,trackingStatus,episodeProgress,episodes,personalRating,isFavorite,rewatchCount,startedOn,completedOn,format,status,season,seasonYear,averageScore,popularity,genres,notes,review");
+        sb.AppendLine("aniListId,title,trackingStatus,episodeProgress,episodes,personalRating,isFavorite,rewatchCount,startedOn,completedOn,format,status,season,seasonYear,averageScore,popularity,genres,customListName,userTags,notes,review");
 
         foreach (var item in items)
         {
@@ -452,6 +496,8 @@ public class TrackedShowsController : ControllerBase
                 item.AverageScore?.ToString(CultureInfo.InvariantCulture) ?? "",
                 item.Popularity?.ToString(CultureInfo.InvariantCulture) ?? "",
                 string.Join("|", item.Genres),
+                item.CustomListName ?? "",
+                string.Join("|", item.UserTags),
                 item.Notes ?? "",
                 item.Review ?? ""
             };
@@ -521,6 +567,12 @@ public class TrackedShowsController : ControllerBase
         private string? _review;
         public string? Review { get => _review; set { _review = value; ReviewSet = true; } }
         [JsonIgnore] public bool ReviewSet { get; private set; }
+        private string? _customListName;
+        public string? CustomListName { get => _customListName; set { _customListName = value; CustomListNameSet = true; } }
+        [JsonIgnore] public bool CustomListNameSet { get; private set; }
+        private List<string>? _userTags;
+        public List<string>? UserTags { get => _userTags; set { _userTags = value; UserTagsSet = true; } }
+        [JsonIgnore] public bool UserTagsSet { get; private set; }
         private int? _rewatchCount;
         public int? RewatchCount { get => _rewatchCount; set { _rewatchCount = value; RewatchCountSet = true; } }
         [JsonIgnore] public bool RewatchCountSet { get; private set; }
@@ -558,6 +610,8 @@ public class TrackedShowsController : ControllerBase
         public bool IsFavorite { get; set; }
         public string? Notes { get; set; }
         public string? Review { get; set; }
+        public string? CustomListName { get; set; }
+        public List<string> UserTags { get; set; } = new();
         public int RewatchCount { get; set; }
         public DateOnly? StartedOn { get; set; }
         public DateOnly? CompletedOn { get; set; }

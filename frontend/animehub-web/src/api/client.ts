@@ -27,6 +27,7 @@ export type AnimeSearchItem = {
   averageScore?: number | null;
   popularity?: number | null;
   coverImageUrl?: string | null;
+  genres: string[];
 };
 
 export type TrackingStatus =
@@ -56,6 +57,8 @@ export type TrackedShow = {
   isFavorite: boolean;
   notes?: string | null;
   review?: string | null;
+  customListName?: string | null;
+  userTags: string[];
   rewatchCount: number;
   startedOn?: string | null;
   completedOn?: string | null;
@@ -76,6 +79,22 @@ export type MostTrackedShow = {
   popularity?: number | null;
   genres: string[];
   trackedCount: number;
+};
+
+export type AnimeRecommendationItem = {
+  aniListId: number;
+  title: string;
+  format?: string | null;
+  status?: string | null;
+  episodes?: number | null;
+  season?: string | null;
+  seasonYear?: number | null;
+  averageScore?: number | null;
+  popularity?: number | null;
+  coverImageUrl?: string | null;
+  bannerImageUrl?: string | null;
+  genres: string[];
+  recommendationReason?: string | null;
 };
 
 export type ForumThreadSummary = {
@@ -174,6 +193,23 @@ export function getTracked(signal?: AbortSignal) {
 
 export function getMostTracked(limit = 4, signal?: AbortSignal) {
   return apiGet<MostTrackedShow[]>(`/api/tracked/most?limit=${limit}`, signal);
+}
+
+export function getRecommendations(limit = 12, signal?: AbortSignal) {
+  return apiGet<PagedResult<AnimeRecommendationItem>>(
+    `/api/anime/recommendations?limit=${limit}`,
+    signal,
+  );
+}
+
+export function getDiscovery(mode: string, page = 1, perPage = 18, signal?: AbortSignal) {
+  const params = new URLSearchParams({
+    mode,
+    page: String(page),
+    perPage: String(perPage),
+  });
+
+  return apiGet<PagedResult<AnimeRecommendationItem>>(`/api/anime/discover?${params}`, signal);
 }
 
 export function trackShow(body: Partial<TrackedShow> & { aniListId: number; title: string }) {

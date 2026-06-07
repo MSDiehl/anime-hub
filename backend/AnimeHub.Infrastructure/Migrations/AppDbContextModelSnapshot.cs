@@ -229,6 +229,10 @@ namespace AnimeHub.Infrastructure.Migrations
                     b.Property<DateOnly?>("CompletedOn")
                         .HasColumnType("date");
 
+                    b.Property<string>("CustomListName")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
                     b.Property<DateTime>("CreatedUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -287,6 +291,10 @@ namespace AnimeHub.Infrastructure.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
+                    b.Property<string>("UserTagCsv")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<DateTime?>("UpdatedUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -300,6 +308,8 @@ namespace AnimeHub.Infrastructure.Migrations
                     b.HasIndex("UserId", "IsFavorite");
 
                     b.HasIndex("UserId", "TrackingStatus");
+
+                    b.HasIndex("UserId", "CustomListName");
 
                     b.HasIndex("UserId", "AniListId")
                         .IsUnique();

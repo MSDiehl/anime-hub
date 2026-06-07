@@ -24,6 +24,8 @@ public class TrackedShow
     public bool IsFavorite { get; set; }
     public string? Notes { get; set; }
     public string? Review { get; set; }
+    public string? CustomListName { get; set; }
+    public string? UserTagCsv { get; set; }
     public int RewatchCount { get; set; }
     public DateOnly? StartedOn { get; set; }
     public DateOnly? CompletedOn { get; set; }

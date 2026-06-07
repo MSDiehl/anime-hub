@@ -121,6 +121,8 @@ type TrackedShow = {
   isFavorite: boolean;
   notes?: string | null;
   review?: string | null;
+  customListName?: string | null;
+  userTags: string[];
   rewatchCount: number;
   startedOn?: string | null;
   completedOn?: string | null;
@@ -166,6 +168,14 @@ function formatAiringTime(value?: number | null) {
 
 function shortTitle(value: string) {
   return value.length > 16 ? `${value.slice(0, 15)}...` : value;
+}
+
+function parseTagInput(value: string) {
+  return value
+    .split(",")
+    .map((item) => item.trim().replace(/^#/, "").toLowerCase())
+    .filter(Boolean)
+    .slice(0, 20);
 }
 
 type ThreadSummary = {
@@ -412,6 +422,8 @@ export default function AnimeDetails({ onLogout }: Props) {
       isFavorite: overrides.isFavorite ?? false,
       notes: null,
       review: null,
+      customListName: null,
+      userTags: [],
       rewatchCount: 0,
       startedOn: null,
       completedOn: null,
@@ -942,6 +954,34 @@ export default function AnimeDetails({ onLogout }: Props) {
                   })
                 }
                 disabled={!isTracked || trackingSaving}
+              />
+            </label>
+
+            <label className="adTrackingField">
+              List
+              <input
+                key={`list-${trackedShow?.id ?? activeId}`}
+                defaultValue={trackedShow?.customListName ?? ""}
+                maxLength={80}
+                onBlur={(e) =>
+                  patchTrackedShow({ customListName: e.currentTarget.value.trim() || null })
+                }
+                disabled={!isTracked || trackingSaving}
+                placeholder="Weekend queue"
+              />
+            </label>
+
+            <label className="adTrackingField">
+              Tags
+              <input
+                key={`tags-${trackedShow?.id ?? activeId}`}
+                defaultValue={trackedShow?.userTags.join(", ") ?? ""}
+                maxLength={500}
+                onBlur={(e) =>
+                  patchTrackedShow({ userTags: parseTagInput(e.currentTarget.value) })
+                }
+                disabled={!isTracked || trackingSaving}
+                placeholder="cozy, rewatch"
               />
             </label>
 

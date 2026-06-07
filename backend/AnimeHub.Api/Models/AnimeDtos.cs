@@ -14,6 +14,38 @@ public sealed class AnimeSearchItem
     public int? AverageScore { get; set; }
     public int? Popularity { get; set; }
     public string? CoverImageUrl { get; set; }
+    public List<string> Genres { get; set; } = new();
+}
+
+public sealed class AnimeRecommendationItem
+{
+    public int AniListId { get; set; }
+    public string Title { get; set; } = "";
+    public string? Format { get; set; }
+    public string? Status { get; set; }
+    public int? Episodes { get; set; }
+    public string? Season { get; set; }
+    public int? SeasonYear { get; set; }
+    public int? AverageScore { get; set; }
+    public int? Popularity { get; set; }
+    public string? CoverImageUrl { get; set; }
+    public string? BannerImageUrl { get; set; }
+    public List<string> Genres { get; set; } = new();
+    public string? RecommendationReason { get; set; }
+}
+
+public sealed class AnimeDiscoveryRequest
+{
+    public int Page { get; set; } = 1;
+    public int PerPage { get; set; } = 18;
+    public List<string>? Genres { get; set; }
+    public List<int>? ExcludedAniListIds { get; set; }
+    public string? Season { get; set; }
+    public int? SeasonYear { get; set; }
+    public string? Status { get; set; }
+    public List<string>? Sort { get; set; }
+    public int? MinAverageScore { get; set; }
+    public int? MaxPopularity { get; set; }
 }
 
 public sealed class AnimeDetailsDto

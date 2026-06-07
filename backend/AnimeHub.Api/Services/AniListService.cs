@@ -17,6 +17,10 @@ public interface IAniListService
     Task<AnimeDetailsDto?> GetAnimeDetailsAsync(
         int aniListId,
         CancellationToken cancellationToken = default);
+
+    Task<PagedResult<AnimeRecommendationItem>> DiscoverAnimeAsync(
+        AnimeDiscoveryRequest request,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class AniListService : IAniListService
@@ -72,11 +76,81 @@ public sealed class AniListService : IAniListService
                 SeasonYear = m.SeasonYear,
                 AverageScore = m.AverageScore,
                 Popularity = m.Popularity,
-                CoverImageUrl = m.CoverImage?.Large
+                CoverImageUrl = m.CoverImage?.Large,
+                Genres = m.Genres ?? new List<string>()
             })
             .ToList() ?? new List<AnimeSearchItem>();
 
         return new PagedResult<AnimeSearchItem>
+        {
+            Page = pageData?.PageInfo?.CurrentPage ?? page,
+            PerPage = pageData?.PageInfo?.PerPage ?? perPage,
+            Total = pageData?.PageInfo?.Total,
+            LastPage = pageData?.PageInfo?.LastPage,
+            HasNextPage = pageData?.PageInfo?.HasNextPage ?? false,
+            Items = items
+        };
+    }
+
+    public async Task<PagedResult<AnimeRecommendationItem>> DiscoverAnimeAsync(
+        AnimeDiscoveryRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var page = Math.Max(request.Page, 1);
+        var perPage = Math.Clamp(request.PerPage, 1, 30);
+        var genres = request.Genres?
+            .Select(g => g.Trim())
+            .Where(g => !string.IsNullOrWhiteSpace(g))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(6)
+            .ToList();
+        var excluded = request.ExcludedAniListIds?
+            .Where(id => id > 0)
+            .Distinct()
+            .Take(500)
+            .ToList();
+        var sort = request.Sort is { Count: > 0 }
+            ? request.Sort
+            : new List<string> { "TRENDING_DESC", "POPULARITY_DESC" };
+
+        var parsed = await PostAsync<AniListSearchResponse>(
+            DiscoveryQuery,
+            new
+            {
+                page,
+                perPage,
+                genres = genres is { Count: > 0 } ? genres : null,
+                excluded = excluded is { Count: > 0 } ? excluded : null,
+                season = NormalizeAniListEnum(request.Season),
+                seasonYear = request.SeasonYear,
+                status = NormalizeAniListEnum(request.Status),
+                sort,
+                minScore = request.MinAverageScore,
+                maxPopularity = request.MaxPopularity
+            },
+            "anime discovery",
+            cancellationToken);
+
+        var pageData = parsed.Data?.Page;
+        var items = pageData?.Media?
+            .Select(m => new AnimeRecommendationItem
+            {
+                AniListId = m.Id,
+                Title = BestTitle(m.Title),
+                Format = m.Format,
+                Status = m.Status,
+                Episodes = m.Episodes,
+                Season = m.Season,
+                SeasonYear = m.SeasonYear,
+                AverageScore = m.AverageScore,
+                Popularity = m.Popularity,
+                CoverImageUrl = m.CoverImage?.Large,
+                BannerImageUrl = m.BannerImage,
+                Genres = m.Genres ?? new List<string>()
+            })
+            .ToList() ?? new List<AnimeRecommendationItem>();
+
+        return new PagedResult<AnimeRecommendationItem>
         {
             Page = pageData?.PageInfo?.CurrentPage ?? page,
             PerPage = pageData?.PageInfo?.PerPage ?? perPage,
@@ -287,6 +361,11 @@ public sealed class AniListService : IAniListService
     private static string BestTitle(AniListTitle? title) =>
         title?.English ?? title?.Romaji ?? title?.Native ?? "Unknown";
 
+    private static string? NormalizeAniListEnum(string? value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? null
+            : value.Trim().Replace(" ", "_", StringComparison.OrdinalIgnoreCase).ToUpperInvariant();
+
     private static int SeasonSortValue(string? season) =>
         season?.ToUpperInvariant() switch
         {
@@ -353,7 +432,39 @@ query ($search: String, $page: Int, $perPage: Int) {
       seasonYear
       averageScore
       popularity
+      genres
       coverImage { large }
+    }
+  }
+}";
+
+    private const string DiscoveryQuery = @"
+query ($page: Int, $perPage: Int, $genres: [String], $excluded: [Int], $season: MediaSeason, $seasonYear: Int, $status: MediaStatus, $sort: [MediaSort], $minScore: Int, $maxPopularity: Int) {
+  Page(page: $page, perPage: $perPage) {
+    pageInfo { total currentPage lastPage hasNextPage perPage }
+    media(
+      type: ANIME,
+      genre_in: $genres,
+      id_not_in: $excluded,
+      season: $season,
+      seasonYear: $seasonYear,
+      status: $status,
+      sort: $sort,
+      averageScore_greater: $minScore,
+      popularity_lesser: $maxPopularity
+    ) {
+      id
+      title { romaji english native }
+      format
+      status
+      episodes
+      season
+      seasonYear
+      averageScore
+      popularity
+      genres
+      coverImage { large }
+      bannerImage
     }
   }
 }";
@@ -447,6 +558,8 @@ query ($id: Int) {
         public int? SeasonYear { get; set; }
         public int? AverageScore { get; set; }
         public int? Popularity { get; set; }
+        public List<string>? Genres { get; set; }
+        public string? BannerImage { get; set; }
         public AniListCoverImage? CoverImage { get; set; }
     }
 

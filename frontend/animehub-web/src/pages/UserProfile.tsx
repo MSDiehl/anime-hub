@@ -6,6 +6,7 @@ import { CoverFallback, EmptyState, SkeletonBlock, useConfirm, useToast } from "
 import { TrashIcon } from "../components/Icons";
 import { getErrorMessage } from "../utils/apiError";
 import { Avatar } from "./Forums";
+import "./Dashboard.css";
 import "./Forums.css";
 
 type Props = {
@@ -26,8 +27,37 @@ type UserProfileDto = {
   isProfilePublic: boolean;
   threadCount: number;
   commentCount: number;
+  stats: UserProfileStats;
+  shelves: UserShelf[];
+  recentActivity: UserActivity[];
   recentThreads: UserThread[];
   favorites: UserFavorite[];
+};
+
+type UserProfileStats = {
+  trackedCount: number;
+  watchingCount: number;
+  completedCount: number;
+  planToWatchCount: number;
+  favoriteCount: number;
+  episodesWatched: number;
+  averageRating?: number | null;
+  topGenres: string[];
+};
+
+type UserShelf = {
+  name: string;
+  kind: string;
+  items: UserFavorite[];
+};
+
+type UserActivity = {
+  type: string;
+  title: string;
+  occurredUtc: string;
+  aniListId?: number | null;
+  threadId?: string | null;
+  coverImageUrl?: string | null;
 };
 
 type UserThread = {
@@ -51,6 +81,10 @@ type UserFavorite = {
   coverImageUrl?: string | null;
   format?: string | null;
   averageScore?: number | null;
+  personalRating?: number | null;
+  trackingStatus: string;
+  customListName?: string | null;
+  userTags: string[];
 };
 
 export default function UserProfile({ onLogout }: Props) {
@@ -212,11 +246,30 @@ export default function UserProfile({ onLogout }: Props) {
               <div>
                 <h1 className="forumH1">{profile.displayName}</h1>
                 <div className="forumThreadMeta">
+                  <span>{profile.stats.trackedCount} tracked</span>
                   <span>{profile.threadCount} threads</span>
                   <span>{profile.commentCount} replies</span>
-                  <span>{profile.favorites.length} favorites shown</span>
+                  <span>{profile.stats.episodesWatched} episodes</span>
                 </div>
               </div>
+            </section>
+
+            <section className="forumPanel">
+              <div className="forumPanelTag">Stats</div>
+              <div className="dashStatsRow" aria-label="Shared profile stats">
+                <ProfileStat label="Watching" value={profile.stats.watchingCount} />
+                <ProfileStat label="Completed" value={profile.stats.completedCount} />
+                <ProfileStat label="Plan" value={profile.stats.planToWatchCount} />
+                <ProfileStat label="Favorites" value={profile.stats.favoriteCount} />
+                <ProfileStat label="Avg" value={profile.stats.averageRating ?? "—"} />
+              </div>
+              {profile.stats.topGenres.length > 0 && (
+                <div className="forumTagRow">
+                  {profile.stats.topGenres.map((genre) => (
+                    <span key={genre}>#{genre}</span>
+                  ))}
+                </div>
+              )}
             </section>
 
             {isMe && (
@@ -309,6 +362,33 @@ export default function UserProfile({ onLogout }: Props) {
 
             <section className="forumProfileGrid">
               <div className="forumPanel">
+                <div className="forumPanelTag">Activity</div>
+                <h2 className="forumPanelTitle">Recent activity</h2>
+                <div className="forumProfileList">
+                  {profile.recentActivity.length === 0 ? (
+                    <EmptyState
+                      message="Track shows or join discussions to build an activity trail."
+                      title="No recent activity"
+                    />
+                  ) : (
+                    profile.recentActivity.map((activity, index) => (
+                      <button
+                        key={`${activity.type}-${activity.title}-${index}`}
+                        className="forumProfileThread"
+                        onClick={() => {
+                          if (activity.threadId) navigate(`/forums/thread/${activity.threadId}`);
+                          else if (activity.aniListId) navigate(`/anime/${activity.aniListId}`);
+                        }}
+                      >
+                        <span>{activityLabel(activity.type)} · {activity.title}</span>
+                        <small>{formatDate(activity.occurredUtc)}</small>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="forumPanel">
                 <div className="forumPanelTag">Posts</div>
                 <h2 className="forumPanelTitle">Recent threads</h2>
                 <div className="forumProfileList">
@@ -336,6 +416,44 @@ export default function UserProfile({ onLogout }: Props) {
                   )}
                 </div>
               </div>
+            </section>
+
+            <section className="forumPanel">
+              <div className="forumPanelTag">Shelves</div>
+              <h2 className="forumPanelTitle">Shared anime shelves</h2>
+              {profile.shelves.length === 0 ? (
+                <EmptyState
+                  actionLabel={isMe ? "Open dashboard" : "Browse search"}
+                  message={
+                    isMe
+                      ? "Add custom list names on tracked shows to publish shelves here."
+                      : "This profile has not shared any shelves yet."
+                  }
+                  onAction={() => navigate(isMe ? "/dashboard" : "/search")}
+                  title="No shelves yet"
+                />
+              ) : (
+                <div className="forumProfileList">
+                  {profile.shelves.map((shelf) => (
+                    <div className="forumShelfBlock" key={`${shelf.kind}-${shelf.name}`}>
+                      <div className="forumPanelTag">{shelf.kind}</div>
+                      <h3 className="forumPanelTitle">{shelf.name}</h3>
+                      <div className="forumFavoriteGrid">
+                        {shelf.items.map((favorite) => (
+                          <FavoriteCard
+                            favorite={favorite}
+                            key={`${shelf.name}-${favorite.aniListId}`}
+                            onOpen={() => navigate(`/anime/${favorite.aniListId}`)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="forumProfileGrid">
 
               <div className="forumPanel">
                 <div className="forumPanelTag">Favorites</div>
@@ -354,26 +472,11 @@ export default function UserProfile({ onLogout }: Props) {
                     />
                   ) : (
                     profile.favorites.map((favorite) => (
-                      <button
+                      <FavoriteCard
+                        favorite={favorite}
                         key={favorite.aniListId}
-                        className="forumFavoriteCard"
-                        onClick={() => navigate(`/anime/${favorite.aniListId}`)}
-                      >
-                        <span
-                          className="forumFavoriteCover"
-                          style={{
-                            backgroundImage: favorite.coverImageUrl
-                              ? `url(${favorite.coverImageUrl})`
-                              : undefined,
-                          }}
-                        >
-                          {!favorite.coverImageUrl && <CoverFallback label="No cover" />}
-                        </span>
-                        <b>{favorite.title}</b>
-                        <small>
-                          {favorite.format ?? "Anime"} - {favorite.averageScore ?? "No score"}
-                        </small>
-                      </button>
+                        onOpen={() => navigate(`/anime/${favorite.aniListId}`)}
+                      />
                     ))
                   )}
                 </div>
@@ -384,6 +487,57 @@ export default function UserProfile({ onLogout }: Props) {
       </main>
     </div>
   );
+}
+
+function ProfileStat({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="dashStatCard">
+      <div className="dashStatLabel">{label}</div>
+      <div className="dashStatValue">{value}</div>
+    </div>
+  );
+}
+
+function FavoriteCard({
+  favorite,
+  onOpen,
+}: {
+  favorite: UserFavorite;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      className="forumFavoriteCard"
+      onClick={onOpen}
+    >
+      <span
+        className="forumFavoriteCover"
+        style={{
+          backgroundImage: favorite.coverImageUrl
+            ? `url(${favorite.coverImageUrl})`
+            : undefined,
+        }}
+      >
+        {!favorite.coverImageUrl && <CoverFallback label="No cover" />}
+      </span>
+      <b>{favorite.title}</b>
+      <small>
+        {favorite.customListName ?? favorite.trackingStatus} ·{" "}
+        {favorite.personalRating ? `${favorite.personalRating}/10` : favorite.averageScore ?? "No score"}
+      </small>
+      {favorite.userTags.length > 0 && (
+        <span className="forumThreadMeta">
+          {favorite.userTags.slice(0, 2).map((tag) => `#${tag}`).join(" ")}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function activityLabel(type: string) {
+  if (type === "thread") return "Posted";
+  if (type === "completed") return "Completed";
+  return "Tracked";
 }
 
 function formatDate(value: string) {

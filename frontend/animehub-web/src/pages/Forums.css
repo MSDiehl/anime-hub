@@ -459,6 +459,13 @@
   font-weight: 900;
 }
 
+.forumShelfBlock {
+  border-top: 3px solid var(--ink);
+  display: grid;
+  gap: 12px;
+  padding-top: 14px;
+}
+
 .forumToolbar {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) 150px 170px 130px auto;

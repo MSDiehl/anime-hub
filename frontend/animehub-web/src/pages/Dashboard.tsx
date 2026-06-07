@@ -19,6 +19,9 @@ type ScheduleItem = {
   aniListId: number;
   episode: number;
   airingAt: number;
+  isTracked?: boolean;
+  isWatched?: boolean;
+  episodeProgress?: number | null;
   titleEnglish?: string | null;
   titleRomaji?: string | null;
   titleNative?: string | null;
@@ -55,6 +58,15 @@ function titleForSchedule(item: ScheduleItem) {
   return item.titleEnglish || item.titleRomaji || item.titleNative || `AniList #${item.aniListId}`;
 }
 
+function formatScheduleDate(item: ScheduleItem) {
+  return new Date(item.airingAt * 1000).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 function unique(values: Array<string | null | undefined>) {
   return Array.from(new Set(values.filter(Boolean) as string[])).sort();
 }
@@ -66,9 +78,9 @@ export default function Dashboard({ onLogout }: Props) {
   const { pushToast } = useToast();
 
   const [items, setItems] = useState<TrackedShow[]>([]);
-  const [airingToday, setAiringToday] = useState<ScheduleItem[]>([]);
+  const [watchNext, setWatchNext] = useState<ScheduleItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [airingLoading, setAiringLoading] = useState(true);
+  const [watchNextLoading, setWatchNextLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -77,13 +89,15 @@ export default function Dashboard({ onLogout }: Props) {
   const [formatFilter, setFormatFilter] = useState("All");
   const [genreFilter, setGenreFilter] = useState("All");
   const [seasonFilter, setSeasonFilter] = useState("All");
+  const [listFilter, setListFilter] = useState("All");
+  const [tagFilter, setTagFilter] = useState("All");
   const [yearFilter, setYearFilter] = useState("All");
   const [sortBy, setSortBy] = useState<SortKey>("recentlyAdded");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
 
   useEffect(() => {
     load();
-    loadAiringToday();
+    loadWatchNext();
   }, []);
 
   async function load() {
@@ -99,16 +113,16 @@ export default function Dashboard({ onLogout }: Props) {
     }
   }
 
-  async function loadAiringToday() {
-    setAiringLoading(true);
+  async function loadWatchNext() {
+    setWatchNextLoading(true);
     try {
-      setAiringToday(await apiGet<ScheduleItem[]>(
-        `/api/schedule/week?start=${encodeURIComponent(todayIso())}&days=1&trackedOnly=true`,
+      setWatchNext(await apiGet<ScheduleItem[]>(
+        `/api/schedule/week?start=${encodeURIComponent(todayIso())}&days=14&trackedOnly=true&unwatchedOnly=true`,
       ));
     } catch {
-      setAiringToday([]);
+      setWatchNext([]);
     } finally {
-      setAiringLoading(false);
+      setWatchNextLoading(false);
     }
   }
 
@@ -207,6 +221,8 @@ export default function Dashboard({ onLogout }: Props) {
       formats: unique(items.map((x) => x.format)),
       genres: unique(items.flatMap((x) => x.genres)),
       seasons: unique(items.map((x) => x.season)),
+      lists: unique(items.map((x) => x.customListName)),
+      tags: unique(items.flatMap((x) => x.userTags)),
       years: unique(items.map((x) => x.seasonYear?.toString())),
     };
   }, [items]);
@@ -220,6 +236,8 @@ export default function Dashboard({ onLogout }: Props) {
       .filter((item) => formatFilter === "All" || item.format === formatFilter)
       .filter((item) => genreFilter === "All" || item.genres.includes(genreFilter))
       .filter((item) => seasonFilter === "All" || item.season === seasonFilter)
+      .filter((item) => listFilter === "All" || item.customListName === listFilter)
+      .filter((item) => tagFilter === "All" || item.userTags.includes(tagFilter))
       .filter((item) => yearFilter === "All" || String(item.seasonYear) === yearFilter)
       .slice()
       .sort((a, b) => {
@@ -229,7 +247,7 @@ export default function Dashboard({ onLogout }: Props) {
         if (sortBy === "nextEpisode") return nextEpisodeSort(a) - nextEpisodeSort(b);
         return new Date(b.createdUtc).getTime() - new Date(a.createdUtc).getTime();
       });
-  }, [formatFilter, genreFilter, items, search, seasonFilter, sortBy, statusFilter, yearFilter]);
+  }, [formatFilter, genreFilter, items, listFilter, search, seasonFilter, sortBy, statusFilter, tagFilter, yearFilter]);
 
   const sections = useMemo(() => {
     const recentlyTracked = items
@@ -340,6 +358,20 @@ export default function Dashboard({ onLogout }: Props) {
             ))}
           </Select>
 
+          <Select label="List" value={listFilter} onChange={setListFilter}>
+            <option value="All">All</option>
+            {options.lists.map((value) => (
+              <option key={value} value={value}>{value}</option>
+            ))}
+          </Select>
+
+          <Select label="Tag" value={tagFilter} onChange={setTagFilter}>
+            <option value="All">All</option>
+            {options.tags.map((value) => (
+              <option key={value} value={value}>#{value}</option>
+            ))}
+          </Select>
+
           <Select label="Year" value={yearFilter} onChange={setYearFilter}>
             <option value="All">All</option>
             {options.years.map((value) => (
@@ -353,6 +385,7 @@ export default function Dashboard({ onLogout }: Props) {
           <button className="dashPillBtn" onClick={() => exportTracked("json")}>Export JSON</button>
           <button className="dashPillBtn" onClick={() => exportTracked("csv")}>Export CSV</button>
           <button className="dashPillBtn" onClick={() => fileInputRef.current?.click()}>Import</button>
+          <button className="dashPillBtn" onClick={() => navigate("/discover")}>Discover picks</button>
           <button className="dashPillBtn" disabled title="AniList sync is planned for a later release">
             AniList sync later
           </button>
@@ -394,8 +427,8 @@ export default function Dashboard({ onLogout }: Props) {
           <>
             <DashboardSections
               sections={sections}
-              airingToday={airingToday}
-              airingLoading={airingLoading}
+              watchNext={watchNext}
+              watchNextLoading={watchNextLoading}
               onOpen={(id) => navigate(`/anime/${id}`)}
               onSchedule={() => navigate("/schedule")}
               onSearch={() => navigate("/search")}
@@ -429,6 +462,8 @@ export default function Dashboard({ onLogout }: Props) {
                     setFormatFilter("All");
                     setGenreFilter("All");
                     setSeasonFilter("All");
+                    setListFilter("All");
+                    setTagFilter("All");
                     setYearFilter("All");
                   }}
                   title="No shows match those filters"
@@ -486,8 +521,8 @@ function Segmented({ value, onChange }: { value: ViewMode; onChange: (value: Vie
 
 function DashboardSections({
   sections,
-  airingToday,
-  airingLoading,
+  watchNext,
+  watchNextLoading,
   onOpen,
   onSchedule,
   onSearch,
@@ -497,8 +532,8 @@ function DashboardSections({
     continueWatching: TrackedShow[];
     favorites: TrackedShow[];
   };
-  airingToday: ScheduleItem[];
-  airingLoading: boolean;
+  watchNext: ScheduleItem[];
+  watchNextLoading: boolean;
   onOpen: (aniListId: number) => void;
   onSchedule: () => void;
   onSearch: () => void;
@@ -507,21 +542,21 @@ function DashboardSections({
     <div className="dashSectionGrid">
       <MiniSection title="Continue watching" items={sections.continueWatching} onOpen={onOpen} onEmptyAction={onSearch} />
       <section className="dashMiniSection dashPanel">
-        <div className="dashMiniTitle">Airing today</div>
-        {airingLoading ? (
+        <div className="dashMiniTitle">Watch next</div>
+        {watchNextLoading ? (
           <SkeletonBlock rows={3} />
-        ) : airingToday.length === 0 ? (
+        ) : watchNext.length === 0 ? (
           <EmptyState
             actionLabel="Open schedule"
-            message="Use the schedule page to browse upcoming releases."
+            message="No unwatched tracked episodes are scheduled soon."
             onAction={onSchedule}
-            title="No tracked episodes today"
+            title="Queue is clear"
           />
         ) : (
-          airingToday.slice(0, 4).map((item) => (
+          watchNext.slice(0, 5).map((item) => (
             <button key={`${item.aniListId}-${item.episode}`} className="dashMiniItem" onClick={() => onOpen(item.aniListId)}>
               <span>{titleForSchedule(item)}</span>
-              <b>EP {item.episode}</b>
+              <b>EP {item.episode} · {formatScheduleDate(item)}</b>
             </button>
           ))
         )}
@@ -654,6 +689,26 @@ function TrackedCard({
           </label>
 
           <label>
+            List
+            <input
+              defaultValue={item.customListName ?? ""}
+              maxLength={80}
+              onBlur={(e) => onPatch({ customListName: e.currentTarget.value.trim() || null })}
+              placeholder="Favorites, backlog"
+            />
+          </label>
+
+          <label>
+            Tags
+            <input
+              defaultValue={item.userTags.join(", ")}
+              maxLength={500}
+              onBlur={(e) => onPatch({ userTags: parseTagInput(e.currentTarget.value) })}
+              placeholder="cozy, hype"
+            />
+          </label>
+
+          <label>
             Started
             <input
               type="date"
@@ -754,6 +809,14 @@ function nextEpisodeSort(item: TrackedShow) {
   return item.nextEpisode;
 }
 
+function parseTagInput(value: string) {
+  return value
+    .split(",")
+    .map((item) => item.trim().replace(/^#/, "").toLowerCase())
+    .filter(Boolean)
+    .slice(0, 20);
+}
+
 function parseTrackedCsv(text: string) {
   const [headerLine, ...lines] = text.split(/\r?\n/).filter(Boolean);
   const headers = parseCsvLine(headerLine);
@@ -780,6 +843,8 @@ function parseTrackedCsv(text: string) {
       averageScore: numberOrNull(row.averageScore),
       popularity: numberOrNull(row.popularity),
       genres: row.genres ? row.genres.split("|").filter(Boolean) : [],
+      customListName: row.customListName || null,
+      userTags: row.userTags ? row.userTags.split("|").filter(Boolean) : [],
       notes: row.notes || null,
       review: row.review || null,
     };
