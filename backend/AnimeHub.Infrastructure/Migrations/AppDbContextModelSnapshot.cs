@@ -211,6 +211,51 @@ namespace AnimeHub.Infrastructure.Migrations
                     b.ToTable("DiscussionReports");
                 });
 
+            modelBuilder.Entity("AnimeHub.Domain.Entities.TrackedShowHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("AniListId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<int?>("EpisodeNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("FromValue")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("ToValue")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "CreatedUtc");
+
+                    b.HasIndex("UserId", "AniListId", "CreatedUtc");
+
+                    b.ToTable("TrackedShowHistory");
+                });
+
             modelBuilder.Entity("AnimeHub.Domain.Entities.TrackedShow", b =>
                 {
                     b.Property<Guid>("Id")

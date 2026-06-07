@@ -11,6 +11,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
     public DbSet<TrackedShow> TrackedShows => Set<TrackedShow>();
+    public DbSet<TrackedShowHistory> TrackedShowHistory => Set<TrackedShowHistory>();
 
     // ✅ Discussions
     public DbSet<DiscussionThread> DiscussionThreads => Set<DiscussionThread>();
@@ -36,6 +37,17 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid
             entity.Property(x => x.Review).HasMaxLength(8000);
             entity.Property(x => x.CustomListName).HasMaxLength(80);
             entity.Property(x => x.UserTagCsv).HasMaxLength(500);
+        });
+
+        modelBuilder.Entity<TrackedShowHistory>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.UserId, x.CreatedUtc });
+            entity.HasIndex(x => new { x.UserId, x.AniListId, x.CreatedUtc });
+            entity.Property(x => x.Title).HasMaxLength(300);
+            entity.Property(x => x.EventType).HasMaxLength(40);
+            entity.Property(x => x.FromValue).HasMaxLength(80);
+            entity.Property(x => x.ToValue).HasMaxLength(80);
         });
 
         modelBuilder.Entity<ApplicationUser>(entity =>

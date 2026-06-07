@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using AnimeHub.Api.Models;
+using AnimeHub.Api.Services;
 using AnimeHub.Domain.Entities;
 using AnimeHub.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
@@ -18,6 +19,8 @@ namespace AnimeHub.Api.Controllers;
 [Route("api/tracked")]
 public class TrackedShowsController : ControllerBase
 {
+    private const int AverageEpisodeMinutes = 24;
+
     private static readonly HashSet<string> ValidTrackingStatuses = new(StringComparer.OrdinalIgnoreCase)
     {
         "Watching",
@@ -28,10 +31,15 @@ public class TrackedShowsController : ControllerBase
     };
 
     private readonly AppDbContext _db;
+    private readonly IAniListService _aniList;
     private Guid CurrentUserId =>
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
-    public TrackedShowsController(AppDbContext db) => _db = db;
+    public TrackedShowsController(AppDbContext db, IAniListService aniList)
+    {
+        _db = db;
+        _aniList = aniList;
+    }
 
     [HttpGet]
     public async Task<ActionResult<List<TrackedShowDto>>> GetAll(
@@ -48,13 +56,13 @@ public class TrackedShowsController : ControllerBase
     {
         var uid = CurrentUserId;
 
-        var items = await _db.TrackedShows
+        var query = _db.TrackedShows
             .AsNoTracking()
-            .Where(x => x.UserId == uid)
-            .ToListAsync();
+            .Where(x => x.UserId == uid);
 
-        var filtered = ApplyFilters(items, q, trackingStatus, format, genre, season, customList, tag, year, favoritesOnly);
-        var sorted = ApplySort(filtered, sort).Select(ToDto).ToList();
+        query = ApplyFilters(query, q, trackingStatus, format, genre, season, customList, tag, year, favoritesOnly);
+        var rows = await ApplySort(query, sort).ToListAsync();
+        var sorted = rows.Select(ToDto).ToList();
 
         return Ok(sorted);
     }
@@ -165,6 +173,8 @@ public class TrackedShowsController : ControllerBase
         };
 
         _db.TrackedShows.Add(entity);
+        AddHistory(entity, "tracked", null, entity.TrackingStatus);
+        AddEpisodeHistory(entity, 0, entity.EpisodeProgress);
         await _db.SaveChangesAsync();
 
         return Created($"/api/tracked/{entity.AniListId}", ToDto(entity));
@@ -187,6 +197,195 @@ public class TrackedShowsController : ControllerBase
         return Ok(ToDto(entity));
     }
 
+    [HttpGet("history")]
+    public async Task<ActionResult<List<TrackedShowHistoryDto>>> History(
+        [FromQuery] int? aniListId = null,
+        [FromQuery] int limit = 50)
+    {
+        limit = Math.Clamp(limit, 1, 120);
+
+        var query = _db.TrackedShowHistory
+            .AsNoTracking()
+            .Where(x => x.UserId == CurrentUserId);
+
+        if (aniListId is > 0)
+            query = query.Where(x => x.AniListId == aniListId.Value);
+
+        var rows = await query
+            .OrderByDescending(x => x.CreatedUtc)
+            .ThenByDescending(x => x.Id)
+            .Take(limit)
+            .Select(x => new TrackedShowHistoryDto
+            {
+                Id = x.Id,
+                AniListId = x.AniListId,
+                Title = x.Title,
+                EventType = x.EventType,
+                FromValue = x.FromValue,
+                ToValue = x.ToValue,
+                EpisodeNumber = x.EpisodeNumber,
+                CreatedUtc = x.CreatedUtc
+            })
+            .ToListAsync();
+
+        return Ok(rows);
+    }
+
+    [HttpGet("stats")]
+    public async Task<ActionResult<TrackedStatsDto>> Stats()
+    {
+        var uid = CurrentUserId;
+        var rows = await _db.TrackedShows
+            .AsNoTracking()
+            .Where(x => x.UserId == uid)
+            .ToListAsync();
+
+        var completedEvents = await _db.TrackedShowHistory
+            .AsNoTracking()
+            .Where(x => x.UserId == uid && x.EventType == "status_changed" && x.ToValue == "Completed")
+            .ToListAsync();
+
+        var ratingDistribution = rows
+            .Where(x => x.PersonalRating.HasValue)
+            .GroupBy(x => x.PersonalRating!.Value)
+            .OrderBy(x => x.Key)
+            .Select(x => new CountBucketDto { Label = x.Key.ToString(CultureInfo.InvariantCulture), Count = x.Count() })
+            .ToList();
+
+        var genreTrends = rows
+            .SelectMany(x => SplitGenres(x.GenreCsv))
+            .GroupBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(x => x.Count())
+            .ThenBy(x => x.Key)
+            .Take(10)
+            .Select(x => new CountBucketDto { Label = x.Key, Count = x.Count() })
+            .ToList();
+
+        var completionEventYears = completedEvents
+            .GroupBy(x => x.AniListId)
+            .ToDictionary(x => x.Key, x => x.Min(e => e.CreatedUtc).Year);
+
+        var completionYears = rows
+            .Select(show =>
+            {
+                if (show.CompletedOn.HasValue)
+                    return (int?)show.CompletedOn.Value.Year;
+
+                return completionEventYears.TryGetValue(show.AniListId, out var year)
+                    ? year
+                    : null;
+            })
+            .Where(year => year.HasValue)
+            .Select(year => year!.Value)
+            .ToList();
+
+        var yearlyCompletions = completionYears
+            .GroupBy(x => x)
+            .OrderBy(x => x.Key)
+            .Select(x => new CountBucketDto { Label = x.Key.ToString(CultureInfo.InvariantCulture), Count = x.Count() })
+            .ToList();
+
+        var statusCounts = rows
+            .GroupBy(x => x.TrackingStatus, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x.Key)
+            .Select(x => new CountBucketDto { Label = x.Key, Count = x.Count() })
+            .ToList();
+
+        var rated = rows.Where(x => x.PersonalRating.HasValue).Select(x => x.PersonalRating!.Value).ToList();
+        var episodesWatched = rows.Sum(x => x.EpisodeProgress);
+        var minutesWatched = episodesWatched * AverageEpisodeMinutes;
+
+        return Ok(new TrackedStatsDto
+        {
+            TrackedCount = rows.Count,
+            Favorites = rows.Count(x => x.IsFavorite),
+            EpisodesWatched = episodesWatched,
+            MinutesWatched = minutesWatched,
+            HoursWatched = Math.Round(minutesWatched / 60.0, 1),
+            AveragePersonalRating = rated.Count == 0 ? null : (double?)Math.Round(rated.Average(), 1),
+            AverageAniListScore = rows.Any(x => x.AverageScore.HasValue)
+                ? (double?)Math.Round(rows.Where(x => x.AverageScore.HasValue).Average(x => x.AverageScore!.Value))
+                : null,
+            RatingDistribution = ratingDistribution,
+            GenreTrends = genreTrends,
+            YearlyCompletions = yearlyCompletions,
+            StatusCounts = statusCounts
+        });
+    }
+
+    [HttpPost("bulk")]
+    public async Task<ActionResult<BulkTrackedShowsResultDto>> BulkUpdate([FromBody] BulkTrackedShowsRequest req)
+    {
+        var ids = req.AniListIds
+            .Where(id => id > 0)
+            .Distinct()
+            .Take(500)
+            .ToList();
+
+        if (ids.Count == 0)
+            return BadRequest(ApiError.Validation("Select at least one tracked show."));
+
+        var rows = await _db.TrackedShows
+            .Where(x => x.UserId == CurrentUserId && ids.Contains(x.AniListId))
+            .ToListAsync();
+
+        if (rows.Count == 0)
+            return NotFound(ApiError.NotFound("No selected tracked shows were found."));
+
+        var deleted = 0;
+        var updated = 0;
+
+        if (req.Delete)
+        {
+            foreach (var show in rows)
+            {
+                AddHistory(show, "deleted", show.TrackingStatus, null);
+            }
+
+            _db.TrackedShows.RemoveRange(rows);
+            deleted = rows.Count;
+        }
+        else
+        {
+            foreach (var show in rows)
+            {
+                var changed = false;
+                if (!string.IsNullOrWhiteSpace(req.TrackingStatus))
+                {
+                    var previous = show.TrackingStatus;
+                    show.TrackingStatus = NormalizeTrackingStatus(req.TrackingStatus);
+                    if (!string.Equals(previous, show.TrackingStatus, StringComparison.Ordinal))
+                    {
+                        AddHistory(show, "status_changed", previous, show.TrackingStatus);
+                        changed = true;
+                    }
+                }
+
+                if (req.IsFavorite.HasValue && show.IsFavorite != req.IsFavorite.Value)
+                {
+                    AddHistory(show, "favorite_changed", show.IsFavorite.ToString(CultureInfo.InvariantCulture), req.IsFavorite.Value.ToString(CultureInfo.InvariantCulture));
+                    show.IsFavorite = req.IsFavorite.Value;
+                    changed = true;
+                }
+
+                if (changed)
+                {
+                    show.UpdatedUtc = DateTime.UtcNow;
+                    updated++;
+                }
+            }
+        }
+
+        await _db.SaveChangesAsync();
+
+        return Ok(new BulkTrackedShowsResultDto
+        {
+            Updated = updated,
+            Deleted = deleted,
+            Items = req.Delete ? new List<TrackedShowDto>() : rows.Select(ToDto).ToList()
+        });
+    }
+
     [HttpDelete("{aniListId:int}")]
     public async Task<ActionResult> Untrack([FromRoute] int aniListId)
     {
@@ -198,6 +397,7 @@ public class TrackedShowsController : ControllerBase
         if (entity == null)
             return NotFound(ApiError.NotFound("This show is not tracked."));
 
+        AddHistory(entity, "deleted", entity.TrackingStatus, null);
         _db.TrackedShows.Remove(entity);
         await _db.SaveChangesAsync();
 
@@ -205,14 +405,25 @@ public class TrackedShowsController : ControllerBase
     }
 
     [HttpGet("export")]
-    public async Task<IActionResult> Export([FromQuery] string format = "json")
+    public async Task<IActionResult> Export([FromQuery] string format = "json", [FromQuery] List<int>? ids = null)
     {
-        var items = await _db.TrackedShows
+        var query = _db.TrackedShows
             .AsNoTracking()
-            .Where(x => x.UserId == CurrentUserId)
+            .Where(x => x.UserId == CurrentUserId);
+
+        var selectedIds = ids?
+            .Where(id => id > 0)
+            .Distinct()
+            .Take(500)
+            .ToList();
+
+        if (selectedIds is { Count: > 0 })
+            query = query.Where(x => selectedIds.Contains(x.AniListId));
+
+        var rows = await query
             .OrderBy(x => x.Title)
-            .Select(x => ToDto(x))
             .ToListAsync();
+        var items = rows.Select(ToDto).ToList();
 
         if (string.Equals(format, "csv", StringComparison.OrdinalIgnoreCase))
         {
@@ -230,24 +441,45 @@ public class TrackedShowsController : ControllerBase
 
     [EnableRateLimiting("imports")]
     [HttpPost("import")]
-    public async Task<ActionResult<ImportResultDto>> Import([FromBody] List<ImportTrackedShowRequest>? items)
+    public async Task<ActionResult<ImportResultDto>> Import(
+        [FromBody] JsonElement body,
+        CancellationToken cancellationToken = default)
     {
+        var items = NormalizeImportItems(body);
         if (items is null || items.Count == 0)
             return BadRequest(ApiError.Validation("Import file did not contain any tracked shows."));
+
+        try
+        {
+            await ResolveMissingAniListIdsAsync(items, cancellationToken);
+        }
+        catch (AniListRateLimitException ex)
+        {
+            Response.Headers.RetryAfter = "5";
+            return StatusCode(StatusCodes.Status429TooManyRequests, ApiError.Upstream(ex.Message));
+        }
+        catch (AniListUpstreamException ex)
+        {
+            return StatusCode(StatusCodes.Status502BadGateway, ApiError.Upstream(ex.Message));
+        }
 
         var uid = CurrentUserId;
         var existing = await _db.TrackedShows
             .Where(x => x.UserId == uid)
-            .ToDictionaryAsync(x => x.AniListId);
+            .ToDictionaryAsync(x => x.AniListId, cancellationToken);
 
         var created = 0;
         var updated = 0;
+        var skipped = 0;
 
         foreach (var item in items)
         {
             var title = item.Title?.Trim();
             if (item.AniListId <= 0 || string.IsNullOrWhiteSpace(title))
+            {
+                skipped++;
                 continue;
+            }
 
             if (!existing.TryGetValue(item.AniListId, out var entity))
             {
@@ -260,6 +492,7 @@ public class TrackedShowsController : ControllerBase
                 };
                 _db.TrackedShows.Add(entity);
                 existing[item.AniListId] = entity;
+                AddHistory(entity, "tracked", null, entity.TrackingStatus);
                 created++;
             }
             else
@@ -270,13 +503,330 @@ public class TrackedShowsController : ControllerBase
             ApplyUpdate(entity, item);
         }
 
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(cancellationToken);
 
-        return Ok(new ImportResultDto { Created = created, Updated = updated });
+        return Ok(new ImportResultDto { Created = created, Updated = updated, Skipped = skipped });
     }
 
-    private static IEnumerable<TrackedShow> ApplyFilters(
-        IEnumerable<TrackedShow> items,
+    private async Task ResolveMissingAniListIdsAsync(
+        List<ImportTrackedShowRequest> items,
+        CancellationToken cancellationToken)
+    {
+        var malIds = items
+            .Where(x => x.AniListId <= 0 && x.MalId is > 0)
+            .Select(x => x.MalId!.Value)
+            .Distinct()
+            .ToList();
+
+        if (malIds.Count == 0)
+            return;
+
+        var resolved = await _aniList.ResolveMalIdsAsync(malIds, cancellationToken);
+        foreach (var item in items.Where(x => x.AniListId <= 0 && x.MalId is > 0))
+        {
+            if (resolved.TryGetValue(item.MalId!.Value, out var aniListId))
+                item.AniListId = aniListId;
+        }
+    }
+
+    private static List<ImportTrackedShowRequest> NormalizeImportItems(JsonElement body)
+    {
+        if (body.ValueKind == JsonValueKind.Object)
+        {
+            if (TryGetProperty(body, "items", out var items) && items.ValueKind == JsonValueKind.Array)
+                body = items;
+            else if (TryGetProperty(body, "lists", out var lists) && lists.ValueKind == JsonValueKind.Array)
+            {
+                var normalized = new List<ImportTrackedShowRequest>();
+                foreach (var list in lists.EnumerateArray())
+                {
+                    var listName = GetString(list, "name") ?? GetString(list, "status");
+                    if (!TryGetProperty(list, "entries", out var entries) || entries.ValueKind != JsonValueKind.Array)
+                        continue;
+
+                    foreach (var entry in entries.EnumerateArray())
+                    {
+                        var parsed = ParseImportItem(entry);
+                        if (parsed == null) continue;
+                        if (string.IsNullOrWhiteSpace(parsed.CustomListName) && !string.IsNullOrWhiteSpace(listName))
+                            parsed.CustomListName = listName;
+                        normalized.Add(parsed);
+                    }
+                }
+
+                return normalized;
+            }
+            else if (TryGetProperty(body, "MediaListCollection", out var collection))
+                return NormalizeImportItems(collection);
+            else if (TryGetProperty(body, "data", out var data))
+                return NormalizeImportItems(data);
+            else if (TryGetProperty(body, "anime", out var anime) && anime.ValueKind == JsonValueKind.Array)
+                body = anime;
+        }
+
+        if (body.ValueKind != JsonValueKind.Array)
+            return new List<ImportTrackedShowRequest>();
+
+        return body.EnumerateArray()
+            .Select(ParseImportItem)
+            .Where(item => item != null)
+            .Cast<ImportTrackedShowRequest>()
+            .ToList();
+    }
+
+    private static ImportTrackedShowRequest? ParseImportItem(JsonElement item)
+    {
+        if (item.ValueKind != JsonValueKind.Object)
+            return null;
+
+        TryGetProperty(item, "media", out var media);
+        var mediaObject = media.ValueKind == JsonValueKind.Object ? media : default;
+
+        var malId = GetInt(item, "malId")
+            ?? GetInt(mediaObject, "idMal")
+            ?? GetInt(item, "series_animedb_id");
+
+        var aniListId = GetInt(item, "aniListId")
+            ?? GetInt(item, "mediaId")
+            ?? GetInt(mediaObject, "id");
+
+        if (aniListId is null && malId is null)
+            aniListId = GetInt(item, "id");
+
+        var title = GetString(item, "title")
+            ?? GetString(item, "series_title")
+            ?? GetString(item, "anime_title")
+            ?? GetNestedTitle(mediaObject);
+
+        if (((aniListId is null || aniListId <= 0) && (malId is null || malId <= 0)) || string.IsNullOrWhiteSpace(title))
+            return null;
+
+        var req = new ImportTrackedShowRequest
+        {
+            AniListId = aniListId ?? 0,
+            MalId = malId,
+            Title = title,
+            TrackingStatus = NormalizeImportStatus(
+                GetString(item, "trackingStatus")
+                ?? GetString(item, "status")
+                ?? GetString(item, "my_status")
+                ?? GetString(item, "list_status"))
+        };
+
+        var coverImageUrl = GetString(item, "coverImageUrl") ?? GetNestedCover(mediaObject);
+        if (coverImageUrl != null) req.CoverImageUrl = coverImageUrl;
+        var format = GetString(item, "format") ?? GetString(mediaObject, "format") ?? GetString(item, "series_type");
+        if (format != null) req.Format = format;
+        var mediaStatus = GetString(item, "mediaStatus") ?? GetString(mediaObject, "status");
+        if (mediaStatus != null) req.Status = mediaStatus;
+        var episodes = GetInt(item, "episodes") ?? GetInt(mediaObject, "episodes") ?? GetInt(item, "series_episodes");
+        if (episodes.HasValue) req.Episodes = episodes;
+        var season = GetString(item, "season") ?? GetString(mediaObject, "season");
+        if (season != null) req.Season = season;
+        var seasonYear = GetInt(item, "seasonYear") ?? GetInt(mediaObject, "seasonYear");
+        if (seasonYear.HasValue) req.SeasonYear = seasonYear;
+        var averageScore = GetInt(item, "averageScore") ?? GetInt(mediaObject, "averageScore");
+        if (averageScore.HasValue) req.AverageScore = averageScore;
+        var popularity = GetInt(item, "popularity") ?? GetInt(mediaObject, "popularity");
+        if (popularity.HasValue) req.Popularity = popularity;
+        var genres = GetStringList(item, "genres") ?? GetStringList(mediaObject, "genres");
+        if (genres != null) req.Genres = genres;
+        var episodeProgress = GetInt(item, "episodeProgress") ?? GetInt(item, "progress") ?? GetInt(item, "my_watched_episodes") ?? GetInt(item, "watched_episodes");
+        if (episodeProgress.HasValue) req.EpisodeProgress = episodeProgress;
+        var personalRating = NormalizeImportedRating(GetNumber(item, "personalRating") ?? GetNumber(item, "score") ?? GetNumber(item, "my_score"));
+        if (personalRating.HasValue) req.PersonalRating = personalRating;
+        var isFavorite = GetBool(item, "isFavorite") ?? GetBool(item, "favorite");
+        if (isFavorite.HasValue) req.IsFavorite = isFavorite;
+        var rewatchCount = GetInt(item, "rewatchCount") ?? GetInt(item, "repeat") ?? GetInt(item, "my_times_watched");
+        if (rewatchCount.HasValue) req.RewatchCount = rewatchCount;
+        var startedOn = GetDate(item, "startedOn") ?? GetDate(item, "startedAt") ?? GetDate(item, "started_at") ?? GetDate(item, "my_start_date");
+        if (startedOn.HasValue) req.StartedOn = startedOn;
+        var completedOn = GetDate(item, "completedOn") ?? GetDate(item, "completedAt") ?? GetDate(item, "completed_at") ?? GetDate(item, "my_finish_date");
+        if (completedOn.HasValue) req.CompletedOn = completedOn;
+        var customListName = GetString(item, "customListName") ?? GetString(item, "listName");
+        if (customListName != null) req.CustomListName = customListName;
+        var userTags = GetStringList(item, "userTags") ?? GetStringList(item, "tags");
+        if (userTags != null) req.UserTags = userTags;
+        var notes = GetString(item, "notes") ?? GetString(item, "my_comments");
+        if (notes != null) req.Notes = notes;
+        var review = GetString(item, "review");
+        if (review != null) req.Review = review;
+
+        return req;
+    }
+
+    private static string NormalizeImportStatus(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "PlanToWatch";
+
+        return value.Trim().ToUpperInvariant() switch
+        {
+            "CURRENT" or "WATCHING" => "Watching",
+            "COMPLETED" => "Completed",
+            "PAUSED" or "ON-HOLD" or "ON_HOLD" => "Paused",
+            "DROPPED" => "Dropped",
+            "PLANNING" or "PLAN TO WATCH" or "PLAN_TO_WATCH" or "PLANTOWATCH" => "PlanToWatch",
+            _ => NormalizeTrackingStatus(value)
+        };
+    }
+
+    private static int? NormalizeImportedRating(double? value)
+    {
+        if (value is null)
+            return null;
+
+        return value > 10
+            ? Math.Clamp((int)Math.Round(value.Value / 10.0), 0, 10)
+            : Math.Clamp((int)Math.Round(value.Value), 0, 10);
+    }
+
+    private static bool TryGetProperty(JsonElement element, string name, out JsonElement value)
+    {
+        value = default;
+        if (element.ValueKind != JsonValueKind.Object)
+            return false;
+
+        foreach (var property in element.EnumerateObject())
+        {
+            if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string? GetString(JsonElement element, string name)
+    {
+        if (!TryGetProperty(element, name, out var value))
+            return null;
+
+        return value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString(),
+            JsonValueKind.Number => value.GetRawText(),
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            _ => null
+        };
+    }
+
+    private static int? GetInt(JsonElement element, string name)
+    {
+        if (!TryGetProperty(element, name, out var value))
+            return null;
+
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number))
+            return number;
+
+        return value.ValueKind == JsonValueKind.String && int.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out number)
+            ? number
+            : null;
+    }
+
+    private static double? GetNumber(JsonElement element, string name)
+    {
+        if (!TryGetProperty(element, name, out var value))
+            return null;
+
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number))
+            return number;
+
+        return value.ValueKind == JsonValueKind.String && double.TryParse(value.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out number)
+            ? number
+            : null;
+    }
+
+    private static bool? GetBool(JsonElement element, string name)
+    {
+        if (!TryGetProperty(element, name, out var value))
+            return null;
+
+        if (value.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            return value.GetBoolean();
+
+        return value.ValueKind == JsonValueKind.String && bool.TryParse(value.GetString(), out var parsed)
+            ? parsed
+            : null;
+    }
+
+    private static DateOnly? GetDate(JsonElement element, string name)
+    {
+        if (!TryGetProperty(element, name, out var dateValue))
+            return null;
+
+        if (dateValue.ValueKind == JsonValueKind.Object)
+        {
+            var year = GetInt(dateValue, "year");
+            if (year is null or <= 0)
+                return null;
+
+            var month = Math.Clamp(GetInt(dateValue, "month") ?? 1, 1, 12);
+            var maxDay = DateTime.DaysInMonth(year.Value, month);
+            var day = Math.Clamp(GetInt(dateValue, "day") ?? 1, 1, maxDay);
+            return new DateOnly(year.Value, month, day);
+        }
+
+        var value = dateValue.ValueKind == JsonValueKind.String ? dateValue.GetString() : dateValue.GetRawText();
+        if (string.IsNullOrWhiteSpace(value) || value == "0000-00-00")
+            return null;
+
+        return DateOnly.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
+            ? parsed
+            : null;
+    }
+
+    private static List<string>? GetStringList(JsonElement element, string name)
+    {
+        if (!TryGetProperty(element, name, out var value))
+            return null;
+
+        if (value.ValueKind == JsonValueKind.Array)
+        {
+            return value.EnumerateArray()
+                .Select(item => item.ValueKind == JsonValueKind.String ? item.GetString() : item.GetRawText())
+                .Where(item => !string.IsNullOrWhiteSpace(item))
+                .Select(item => item!)
+                .ToList();
+        }
+
+        if (value.ValueKind == JsonValueKind.String)
+        {
+            return value.GetString()?
+                .Split(new[] { ',', '|', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToList();
+        }
+
+        return null;
+    }
+
+    private static string? GetNestedTitle(JsonElement media)
+    {
+        if (!TryGetProperty(media, "title", out var title))
+            return null;
+
+        if (title.ValueKind == JsonValueKind.String)
+            return title.GetString();
+
+        return GetString(title, "english")
+            ?? GetString(title, "romaji")
+            ?? GetString(title, "userPreferred")
+            ?? GetString(title, "native");
+    }
+
+    private static string? GetNestedCover(JsonElement media)
+    {
+        if (!TryGetProperty(media, "coverImage", out var cover))
+            return null;
+
+        return GetString(cover, "extraLarge") ?? GetString(cover, "large") ?? GetString(cover, "medium");
+    }
+
+    private static IQueryable<TrackedShow> ApplyFilters(
+        IQueryable<TrackedShow> query,
         string? q,
         string? trackingStatus,
         string? format,
@@ -287,31 +837,48 @@ public class TrackedShowsController : ControllerBase
         int? year,
         bool favoritesOnly)
     {
-        var query = items;
-
         if (!string.IsNullOrWhiteSpace(q))
         {
             var needle = q.Trim();
-            query = query.Where(x => x.Title.Contains(needle, StringComparison.OrdinalIgnoreCase));
+            query = query.Where(x => EF.Functions.ILike(x.Title, $"%{needle}%"));
         }
 
         if (!string.IsNullOrWhiteSpace(trackingStatus) && !string.Equals(trackingStatus, "All", StringComparison.OrdinalIgnoreCase))
-            query = query.Where(x => string.Equals(x.TrackingStatus, trackingStatus, StringComparison.OrdinalIgnoreCase));
+        {
+            var normalized = NormalizeTrackingStatus(trackingStatus);
+            query = query.Where(x => x.TrackingStatus == normalized);
+        }
 
         if (!string.IsNullOrWhiteSpace(format) && !string.Equals(format, "All", StringComparison.OrdinalIgnoreCase))
-            query = query.Where(x => string.Equals(x.Format, format, StringComparison.OrdinalIgnoreCase));
+        {
+            var normalized = format.Trim();
+            query = query.Where(x => x.Format != null && EF.Functions.ILike(x.Format, normalized));
+        }
 
         if (!string.IsNullOrWhiteSpace(genre) && !string.Equals(genre, "All", StringComparison.OrdinalIgnoreCase))
-            query = query.Where(x => SplitGenres(x.GenreCsv).Any(g => string.Equals(g, genre, StringComparison.OrdinalIgnoreCase)));
+        {
+            var normalized = genre.Trim();
+            query = query.Where(x => x.GenreCsv != null && EF.Functions.ILike("," + x.GenreCsv + ",", "%," + normalized + ",%"));
+        }
 
         if (!string.IsNullOrWhiteSpace(season) && !string.Equals(season, "All", StringComparison.OrdinalIgnoreCase))
-            query = query.Where(x => string.Equals(x.Season, season, StringComparison.OrdinalIgnoreCase));
+        {
+            var normalized = season.Trim();
+            query = query.Where(x => x.Season != null && EF.Functions.ILike(x.Season, normalized));
+        }
 
         if (!string.IsNullOrWhiteSpace(customList) && !string.Equals(customList, "All", StringComparison.OrdinalIgnoreCase))
-            query = query.Where(x => string.Equals(x.CustomListName, customList, StringComparison.OrdinalIgnoreCase));
+        {
+            var normalized = customList.Trim();
+            query = query.Where(x => x.CustomListName != null && EF.Functions.ILike(x.CustomListName, normalized));
+        }
 
         if (!string.IsNullOrWhiteSpace(tag) && !string.Equals(tag, "All", StringComparison.OrdinalIgnoreCase))
-            query = query.Where(x => SplitTags(x.UserTagCsv).Any(t => string.Equals(t, tag, StringComparison.OrdinalIgnoreCase)));
+        {
+            var normalized = NormalizeUserTags(new[] { tag }).FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(normalized))
+                query = query.Where(x => x.UserTagCsv != null && ("," + x.UserTagCsv + ",").Contains("," + normalized + ","));
+        }
 
         if (year is not null)
             query = query.Where(x => x.SeasonYear == year);
@@ -322,28 +889,25 @@ public class TrackedShowsController : ControllerBase
         return query;
     }
 
-    private static IEnumerable<TrackedShow> ApplySort(IEnumerable<TrackedShow> items, string? sort)
+    private static IQueryable<TrackedShow> ApplySort(IQueryable<TrackedShow> query, string? sort)
     {
         return (sort ?? "recentlyAdded").Trim().ToLowerInvariant() switch
         {
-            "title" => items.OrderBy(x => x.Title),
-            "score" => items.OrderByDescending(x => x.AverageScore ?? -1).ThenBy(x => x.Title),
-            "popularity" => items.OrderByDescending(x => x.Popularity ?? -1).ThenBy(x => x.Title),
-            "nextepisode" => items.OrderBy(x => NextEpisodeSortValue(x)).ThenBy(x => x.Title),
-            _ => items.OrderByDescending(x => x.CreatedUtc)
+            "title" => query.OrderBy(x => x.Title),
+            "score" => query.OrderByDescending(x => x.AverageScore ?? -1).ThenBy(x => x.Title),
+            "popularity" => query.OrderByDescending(x => x.Popularity ?? -1).ThenBy(x => x.Title),
+            "nextepisode" => query
+                .OrderBy(x => x.Episodes != null && x.EpisodeProgress < x.Episodes ? x.EpisodeProgress + 1 : int.MaxValue)
+                .ThenBy(x => x.Title),
+            _ => query.OrderByDescending(x => x.CreatedUtc)
         };
     }
 
-    private static int NextEpisodeSortValue(TrackedShow show)
+    private void ApplyUpdate(TrackedShow entity, UpdateTrackedShowRequest req)
     {
-        if (show.Episodes is null || show.EpisodeProgress >= show.Episodes)
-            return int.MaxValue;
+        var previousStatus = entity.TrackingStatus;
+        var previousProgress = entity.EpisodeProgress;
 
-        return Math.Max(1, show.EpisodeProgress + 1);
-    }
-
-    private static void ApplyUpdate(TrackedShow entity, UpdateTrackedShowRequest req)
-    {
         if (req.Title != null && !string.IsNullOrWhiteSpace(req.Title)) entity.Title = req.Title.Trim();
         if (req.CoverImageUrlSet) entity.CoverImageUrl = req.CoverImageUrl;
         if (req.FormatSet) entity.Format = req.Format;
@@ -368,6 +932,53 @@ public class TrackedShowsController : ControllerBase
         if (req.CompletedOnSet) entity.CompletedOn = req.CompletedOn;
 
         entity.UpdatedUtc = DateTime.UtcNow;
+
+        if (!string.Equals(previousStatus, entity.TrackingStatus, StringComparison.Ordinal))
+            AddHistory(entity, "status_changed", previousStatus, entity.TrackingStatus);
+
+        AddEpisodeHistory(entity, previousProgress, entity.EpisodeProgress);
+    }
+
+    private void AddHistory(TrackedShow show, string eventType, string? fromValue, string? toValue, int? episodeNumber = null)
+    {
+        _db.TrackedShowHistory.Add(new TrackedShowHistory
+        {
+            UserId = show.UserId,
+            AniListId = show.AniListId,
+            Title = show.Title,
+            EventType = eventType,
+            FromValue = fromValue,
+            ToValue = toValue,
+            EpisodeNumber = episodeNumber,
+            CreatedUtc = DateTime.UtcNow
+        });
+    }
+
+    private void AddEpisodeHistory(TrackedShow show, int previousProgress, int currentProgress)
+    {
+        if (currentProgress <= previousProgress)
+            return;
+
+        var completedEpisodes = currentProgress - previousProgress;
+        if (completedEpisodes > 100)
+        {
+            AddHistory(
+                show,
+                "episode_progress",
+                previousProgress.ToString(CultureInfo.InvariantCulture),
+                currentProgress.ToString(CultureInfo.InvariantCulture));
+            return;
+        }
+
+        for (var episode = previousProgress + 1; episode <= currentProgress; episode++)
+        {
+            AddHistory(
+                show,
+                "episode_completed",
+                null,
+                episode.ToString(CultureInfo.InvariantCulture),
+                episode);
+        }
     }
 
     private static string NormalizeTrackingStatus(string value)
@@ -587,6 +1198,55 @@ public class TrackedShowsController : ControllerBase
     public sealed class ImportTrackedShowRequest : UpdateTrackedShowRequest
     {
         public int AniListId { get; set; }
+        public int? MalId { get; set; }
+    }
+
+    public sealed class BulkTrackedShowsRequest
+    {
+        public List<int> AniListIds { get; set; } = new();
+        public string? TrackingStatus { get; set; }
+        public bool? IsFavorite { get; set; }
+        public bool Delete { get; set; }
+    }
+
+    public sealed class BulkTrackedShowsResultDto
+    {
+        public int Updated { get; set; }
+        public int Deleted { get; set; }
+        public List<TrackedShowDto> Items { get; set; } = new();
+    }
+
+    public sealed class TrackedShowHistoryDto
+    {
+        public Guid Id { get; set; }
+        public int AniListId { get; set; }
+        public string Title { get; set; } = "";
+        public string EventType { get; set; } = "";
+        public string? FromValue { get; set; }
+        public string? ToValue { get; set; }
+        public int? EpisodeNumber { get; set; }
+        public DateTime CreatedUtc { get; set; }
+    }
+
+    public sealed class TrackedStatsDto
+    {
+        public int TrackedCount { get; set; }
+        public int Favorites { get; set; }
+        public int EpisodesWatched { get; set; }
+        public int MinutesWatched { get; set; }
+        public double HoursWatched { get; set; }
+        public double? AveragePersonalRating { get; set; }
+        public double? AverageAniListScore { get; set; }
+        public List<CountBucketDto> RatingDistribution { get; set; } = new();
+        public List<CountBucketDto> GenreTrends { get; set; } = new();
+        public List<CountBucketDto> YearlyCompletions { get; set; } = new();
+        public List<CountBucketDto> StatusCounts { get; set; } = new();
+    }
+
+    public sealed class CountBucketDto
+    {
+        public string Label { get; set; } = "";
+        public int Count { get; set; }
     }
 
     public sealed class TrackedShowDto
@@ -639,5 +1299,6 @@ public class TrackedShowsController : ControllerBase
     {
         public int Created { get; set; }
         public int Updated { get; set; }
+        public int Skipped { get; set; }
     }
 }

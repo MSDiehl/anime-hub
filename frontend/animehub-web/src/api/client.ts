@@ -66,6 +66,42 @@ export type TrackedShow = {
   updatedUtc?: string | null;
 };
 
+export type CountBucket = {
+  label: string;
+  count: number;
+};
+
+export type TrackedStats = {
+  trackedCount: number;
+  favorites: number;
+  episodesWatched: number;
+  minutesWatched: number;
+  hoursWatched: number;
+  averagePersonalRating?: number | null;
+  averageAniListScore?: number | null;
+  ratingDistribution: CountBucket[];
+  genreTrends: CountBucket[];
+  yearlyCompletions: CountBucket[];
+  statusCounts: CountBucket[];
+};
+
+export type TrackedShowHistory = {
+  id: string;
+  aniListId: number;
+  title: string;
+  eventType: string;
+  fromValue?: string | null;
+  toValue?: string | null;
+  episodeNumber?: number | null;
+  createdUtc: string;
+};
+
+export type BulkTrackedShowsResult = {
+  updated: number;
+  deleted: number;
+  items: TrackedShow[];
+};
+
 export type MostTrackedShow = {
   aniListId: number;
   title: string;
@@ -189,6 +225,32 @@ export function searchAnime({ q, page = 1, perPage = 12 }: AnimeSearchParams, si
 
 export function getTracked(signal?: AbortSignal) {
   return apiGet<TrackedShow[]>("/api/tracked", signal);
+}
+
+export function getTrackedStats(signal?: AbortSignal) {
+  return apiGet<TrackedStats>("/api/tracked/stats", signal);
+}
+
+export function getTrackedHistory(limit = 50, signal?: AbortSignal) {
+  return apiGet<TrackedShowHistory[]>(`/api/tracked/history?limit=${limit}`, signal);
+}
+
+export function bulkUpdateTracked(
+  body: {
+    aniListIds: number[];
+    trackingStatus?: TrackingStatus;
+    isFavorite?: boolean;
+    delete?: boolean;
+  },
+  signal?: AbortSignal,
+) {
+  return apiSend<BulkTrackedShowsResult>("/api/tracked/bulk", "POST", body, signal);
+}
+
+export function downloadTrackedExport(format: "json" | "csv", aniListIds?: number[], signal?: AbortSignal) {
+  const params = new URLSearchParams({ format });
+  for (const id of aniListIds ?? []) params.append("ids", String(id));
+  return apiDownload(`/api/tracked/export?${params}`, signal);
 }
 
 export function getMostTracked(limit = 4, signal?: AbortSignal) {

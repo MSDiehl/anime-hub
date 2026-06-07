@@ -18,6 +18,10 @@ public interface IAniListService
         int aniListId,
         CancellationToken cancellationToken = default);
 
+    Task<Dictionary<int, int>> ResolveMalIdsAsync(
+        IEnumerable<int> malIds,
+        CancellationToken cancellationToken = default);
+
     Task<PagedResult<AnimeRecommendationItem>> DiscoverAnimeAsync(
         AnimeDiscoveryRequest request,
         CancellationToken cancellationToken = default);
@@ -190,6 +194,35 @@ public sealed class AniListService : IAniListService
             cancellationToken);
 
         return details;
+    }
+
+    public async Task<Dictionary<int, int>> ResolveMalIdsAsync(
+        IEnumerable<int> malIds,
+        CancellationToken cancellationToken = default)
+    {
+        var normalized = malIds
+            .Where(id => id > 0)
+            .Distinct()
+            .Take(500)
+            .ToList();
+
+        var results = new Dictionary<int, int>();
+        foreach (var chunk in normalized.Chunk(50))
+        {
+            var parsed = await PostAsync<AniListSearchResponse>(
+                MalIdLookupQuery,
+                new { malIds = chunk },
+                "MAL ID lookup",
+                cancellationToken);
+
+            foreach (var media in parsed.Data?.Page?.Media ?? new List<AniListMedia>())
+            {
+                if (media.IdMal is > 0)
+                    results[media.IdMal.Value] = media.Id;
+            }
+        }
+
+        return results;
     }
 
     private async Task<T> PostAsync<T>(
@@ -530,6 +563,16 @@ query ($id: Int) {
   }
 }";
 
+    private const string MalIdLookupQuery = @"
+query ($malIds: [Int]) {
+  Page(page: 1, perPage: 50) {
+    media(type: ANIME, idMal_in: $malIds) {
+      id
+      idMal
+    }
+  }
+}";
+
     private sealed class AniListSearchResponse { public AniListSearchData? Data { get; set; } }
     private sealed class AniListSearchData { public AniListSearchPage? Page { get; set; } }
     private sealed class AniListSearchPage
@@ -550,6 +593,7 @@ query ($id: Int) {
     private sealed class AniListMedia
     {
         public int Id { get; set; }
+        public int? IdMal { get; set; }
         public AniListTitle? Title { get; set; }
         public string? Format { get; set; }
         public string? Status { get; set; }
