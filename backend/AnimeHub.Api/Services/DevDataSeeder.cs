@@ -33,16 +33,20 @@ public sealed class DevDataSeeder
         if (!_configuration.GetValue("SeedData:Enabled", false))
             return;
 
+        await EnsureRole("Owner");
+        await EnsureRole("Admin");
+        await EnsureRole("Moderator");
+
+        var ownerEmail = _configuration["SeedData:OwnerEmail"];
+        await GrantConfiguredOwner(ownerEmail);
+
         var email = _configuration["SeedData:DemoEmail"] ?? "demo@animehub.local";
         var password = _configuration["SeedData:DemoPassword"];
         if (string.IsNullOrWhiteSpace(password))
         {
-            _logger.LogWarning("SeedData is enabled but SeedData:DemoPassword is not configured.");
+            _logger.LogWarning("SeedData is enabled but SeedData:DemoPassword is not configured. Demo user seeding was skipped.");
             return;
         }
-
-        await EnsureRole("Moderator");
-        await EnsureRole("Admin");
 
         var user = await _users.FindByEmailAsync(email);
         if (user == null)
@@ -71,8 +75,8 @@ public sealed class DevDataSeeder
             await _users.UpdateAsync(user);
         }
 
-        if (!await _users.IsInRoleAsync(user, "Moderator"))
-            await _users.AddToRoleAsync(user, "Moderator");
+        await GrantRole(user, "Moderator");
+        await GrantConfiguredOwner(ownerEmail);
 
         await SeedTrackedShows(user.Id, cancellationToken);
         await SeedDiscussion(user.Id, cancellationToken);
@@ -82,6 +86,39 @@ public sealed class DevDataSeeder
     {
         if (!await _roles.RoleExistsAsync(name))
             await _roles.CreateAsync(new IdentityRole<Guid>(name));
+    }
+
+    private async Task GrantRole(ApplicationUser user, string role)
+    {
+        if (!await _users.IsInRoleAsync(user, role))
+            await _users.AddToRoleAsync(user, role);
+    }
+
+    private async Task GrantConfiguredOwner(string? ownerEmail)
+    {
+        if (string.IsNullOrWhiteSpace(ownerEmail)) return;
+
+        var owner = await _users.FindByEmailAsync(ownerEmail);
+        if (owner == null)
+        {
+            _logger.LogWarning("SeedData:OwnerEmail is configured, but no matching user exists: {Email}", ownerEmail);
+            return;
+        }
+
+        await GrantOwnerRoles(owner);
+    }
+
+    private async Task GrantOwnerRoles(ApplicationUser user)
+    {
+        await GrantRole(user, "Owner");
+        await GrantRole(user, "Admin");
+        await GrantRole(user, "Moderator");
+
+        if (user.TrustLevel < 4)
+        {
+            user.TrustLevel = 4;
+            await _users.UpdateAsync(user);
+        }
     }
 
     private async Task SeedTrackedShows(Guid userId, CancellationToken cancellationToken)

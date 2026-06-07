@@ -23,13 +23,19 @@ public class DiscussionsController : ControllerBase
         "sad"
     };
 
+    private const string ReportStatusOpen = "Open";
+    private const string ReportStatusResolved = "Resolved";
+    private const string ReportStatusDismissed = "Dismissed";
+    private const int ThreadReportLockThreshold = 5;
+    private const int CommentReportDeleteThreshold = 3;
+
     private readonly AppDbContext _db;
 
     private Guid CurrentUserId =>
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
     private bool IsModerator =>
-        User.IsInRole("Moderator") || User.IsInRole("Admin");
+        User.IsInRole("Owner") || User.IsInRole("Admin") || User.IsInRole("Moderator");
 
     public DiscussionsController(AppDbContext db) => _db = db;
 
@@ -79,6 +85,215 @@ public class DiscussionsController : ControllerBase
         return Ok(await BuildThreadPage(query, page, perPage));
     }
 
+    [HttpGet("me/threads")]
+    public async Task<ActionResult<PagedResult<ThreadSummaryDto>>> GetMyThreads(
+        [FromQuery] int page = 1,
+        [FromQuery] int perPage = 10)
+    {
+        page = Math.Max(page, 1);
+        perPage = Math.Clamp(perPage, 1, 25);
+        var uid = CurrentUserId;
+
+        var query = _db.DiscussionThreads
+            .AsNoTracking()
+            .Where(t => t.UserId == uid && !t.IsDeleted)
+            .OrderByDescending(t => t.LastActivityUtc)
+            .ThenByDescending(t => t.CreatedUtc);
+
+        return Ok(await BuildThreadPage(query, page, perPage));
+    }
+
+    [HttpGet("me/unread")]
+    public async Task<ActionResult<PagedResult<ThreadSummaryDto>>> GetUnreadThreads(
+        [FromQuery] int page = 1,
+        [FromQuery] int perPage = 10)
+    {
+        page = Math.Max(page, 1);
+        perPage = Math.Clamp(perPage, 1, 25);
+        var uid = CurrentUserId;
+
+        var query =
+            from subscription in _db.DiscussionThreadSubscriptions.AsNoTracking()
+            join thread in _db.DiscussionThreads.AsNoTracking()
+                on subscription.ThreadId equals thread.Id
+            join read in _db.DiscussionThreadReads.AsNoTracking().Where(r => r.UserId == uid)
+                on thread.Id equals read.ThreadId into readGroup
+            from read in readGroup.DefaultIfEmpty()
+            where subscription.UserId == uid &&
+                !thread.IsDeleted &&
+                thread.Comments.Any(c =>
+                    !c.IsDeleted &&
+                    c.UserId != uid &&
+                    (read == null || c.CreatedUtc > read.LastReadUtc))
+            orderby thread.LastActivityUtc descending, thread.CreatedUtc descending
+            select thread;
+
+        return Ok(await BuildThreadPage(query, page, perPage));
+    }
+
+    [HttpGet("me/replies")]
+    public async Task<ActionResult<PagedResult<ReplyActivityDto>>> GetMyReplies(
+        [FromQuery] int page = 1,
+        [FromQuery] int perPage = 10)
+    {
+        page = Math.Max(page, 1);
+        perPage = Math.Clamp(perPage, 1, 25);
+        var uid = CurrentUserId;
+
+        var query = _db.DiscussionComments
+            .AsNoTracking()
+            .Where(c => c.UserId == uid && !c.IsDeleted && !c.Thread.IsDeleted)
+            .OrderByDescending(c => c.CreatedUtc);
+
+        var total = await query.CountAsync();
+        var items = await query
+            .Skip((page - 1) * perPage)
+            .Take(perPage)
+            .Select(c => new ReplyActivityDto
+            {
+                Id = c.Id,
+                ThreadId = c.ThreadId,
+                ThreadTitle = c.Thread.IsDeleted ? "[deleted]" : c.Thread.Title,
+                AniListId = c.Thread.AniListId,
+                EpisodeNumber = c.Thread.EpisodeNumber,
+                Body = c.Body,
+                CreatedUtc = c.CreatedUtc,
+                ReactionCount = _db.DiscussionReactions.Count(r => r.CommentId == c.Id)
+            })
+            .ToListAsync();
+
+        return Ok(new PagedResult<ReplyActivityDto>
+        {
+            Page = page,
+            PerPage = perPage,
+            Total = total,
+            LastPage = total == 0 ? 0 : (int)Math.Ceiling(total / (double)perPage),
+            HasNextPage = page * perPage < total,
+            Items = items
+        });
+    }
+
+    [HttpGet("mod/reports")]
+    public async Task<ActionResult<PagedResult<ModeratorReportDto>>> GetModeratorReports(
+        [FromQuery] string? status = ReportStatusOpen,
+        [FromQuery] int page = 1,
+        [FromQuery] int perPage = 20)
+    {
+        if (!IsModerator) return Forbid();
+
+        page = Math.Max(page, 1);
+        perPage = Math.Clamp(perPage, 1, 50);
+        var normalizedStatus = NormalizeReportStatus(status, allowAll: true);
+
+        var query = _db.DiscussionReports.AsNoTracking();
+        if (!string.Equals(normalizedStatus, "All", StringComparison.OrdinalIgnoreCase))
+            query = query.Where(r => r.Status == normalizedStatus);
+
+        query = query.OrderByDescending(r => r.CreatedUtc);
+
+        var total = await query.CountAsync();
+        var reports = await query
+            .Skip((page - 1) * perPage)
+            .Take(perPage)
+            .Select(r => new ModeratorReportDto
+            {
+                Id = r.Id,
+                ReporterUserId = r.ReporterUserId,
+                ReporterDisplayName = _db.Users
+                    .Where(u => u.Id == r.ReporterUserId)
+                    .Select(u => u.DisplayName == "" ? (u.Email ?? "User") : u.DisplayName)
+                    .FirstOrDefault() ?? "User",
+                ThreadId = r.ThreadId ?? r.Comment!.ThreadId,
+                CommentId = r.CommentId,
+                TargetType = r.CommentId.HasValue ? "comment" : "thread",
+                ThreadTitle = r.ThreadId.HasValue
+                    ? (r.Thread!.IsDeleted ? "[deleted]" : r.Thread.Title)
+                    : (r.Comment!.Thread.IsDeleted ? "[deleted]" : r.Comment.Thread.Title),
+                Excerpt = r.ThreadId.HasValue
+                    ? (r.Thread!.IsDeleted ? "" : r.Thread.Body)
+                    : (r.Comment!.IsDeleted ? "" : r.Comment.Body),
+                TargetDeleted = r.ThreadId.HasValue
+                    ? r.Thread!.IsDeleted
+                    : r.Comment!.IsDeleted || r.Comment.Thread.IsDeleted,
+                Reason = r.Reason,
+                Status = r.Status,
+                Resolution = r.Resolution,
+                CreatedUtc = r.CreatedUtc,
+                ResolvedUtc = r.ResolvedUtc,
+                OpenTargetReportCount = r.ThreadId.HasValue
+                    ? _db.DiscussionReports.Count(other =>
+                        other.ThreadId == r.ThreadId &&
+                        other.Status == ReportStatusOpen)
+                    : _db.DiscussionReports.Count(other =>
+                        other.CommentId == r.CommentId &&
+                        other.Status == ReportStatusOpen)
+            })
+            .ToListAsync();
+
+        foreach (var report in reports)
+            report.Excerpt = Truncate(report.Excerpt, 220);
+
+        return Ok(new PagedResult<ModeratorReportDto>
+        {
+            Page = page,
+            PerPage = perPage,
+            Total = total,
+            LastPage = total == 0 ? 0 : (int)Math.Ceiling(total / (double)perPage),
+            HasNextPage = page * perPage < total,
+            Items = reports
+        });
+    }
+
+    [HttpPatch("mod/reports/{reportId:guid}")]
+    public async Task<ActionResult> ModerateReport(
+        [FromRoute] Guid reportId,
+        [FromBody] ModerateReportRequest req)
+    {
+        if (!IsModerator) return Forbid();
+
+        var report = await _db.DiscussionReports
+            .Include(r => r.Thread)
+            .Include(r => r.Comment)
+                .ThenInclude(c => c!.Thread)
+            .FirstOrDefaultAsync(r => r.Id == reportId);
+        if (report == null) return NotFound(ApiError.NotFound("Report not found."));
+
+        var status = NormalizeReportStatus(req.Status, allowAll: false);
+        var now = DateTime.UtcNow;
+        report.Status = status;
+        report.Resolution = NormalizeOptional(req.Resolution, 1000);
+        report.ResolvedByUserId = status == ReportStatusOpen ? null : CurrentUserId;
+        report.ResolvedUtc = status == ReportStatusOpen ? null : now;
+
+        var targetThread = report.Thread ?? report.Comment?.Thread;
+        if (req.DeleteTarget)
+        {
+            if (report.Comment != null)
+            {
+                report.Comment.IsDeleted = true;
+                report.Comment.DeletedUtc = now;
+                report.Comment.UpdatedUtc = now;
+            }
+            else if (report.Thread != null)
+            {
+                report.Thread.IsDeleted = true;
+                report.Thread.DeletedUtc = now;
+            }
+        }
+
+        if (req.LockThread && targetThread != null)
+            targetThread.IsLocked = true;
+
+        if (targetThread != null)
+        {
+            targetThread.UpdatedUtc = now;
+            targetThread.LastActivityUtc = now;
+        }
+
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
     // GET: /api/discussions/anime/{aniListId}?episode=12
     [HttpGet("anime/{aniListId:int}")]
     public async Task<ActionResult<PagedResult<ThreadSummaryDto>>> GetThreadsForAnime(
@@ -120,6 +335,8 @@ public class DiscussionsController : ControllerBase
         var category = NormalizeOptional(req.Category, 80) ?? "General";
         var tags = NormalizeTags(req.Tags);
         var now = DateTime.UtcNow;
+        var postingError = await ValidateCommunityPost("thread", title.Value, body.Value, null, now);
+        if (postingError != null) return postingError;
 
         var thread = new DiscussionThread
         {
@@ -137,6 +354,21 @@ public class DiscussionsController : ControllerBase
         };
 
         _db.DiscussionThreads.Add(thread);
+        _db.DiscussionThreadSubscriptions.Add(new DiscussionThreadSubscription
+        {
+            Id = Guid.NewGuid(),
+            ThreadId = thread.Id,
+            UserId = CurrentUserId,
+            NotificationsEnabled = true,
+            CreatedUtc = now
+        });
+        _db.DiscussionThreadReads.Add(new DiscussionThreadRead
+        {
+            Id = Guid.NewGuid(),
+            ThreadId = thread.Id,
+            UserId = CurrentUserId,
+            LastReadUtc = now
+        });
         await _db.SaveChangesAsync();
 
         return Created($"/api/discussions/thread/{thread.Id}", new { id = thread.Id });
@@ -175,7 +407,7 @@ public class DiscussionsController : ControllerBase
                     .Select(r => r.Type)
                     .FirstOrDefault(),
                 ReportCount = canModerate
-                    ? _db.DiscussionReports.Count(r => r.ThreadId == t.Id)
+                    ? _db.DiscussionReports.Count(r => r.ThreadId == t.Id && r.Status == ReportStatusOpen)
                     : 0,
                 CanEdit = canModerate || t.UserId == uid,
                 CanDelete = canModerate || t.UserId == uid,
@@ -207,7 +439,7 @@ public class DiscussionsController : ControllerBase
                     .Select(r => r.Type)
                     .FirstOrDefault(),
                 ReportCount = canModerate
-                    ? _db.DiscussionReports.Count(r => r.CommentId == c.Id)
+                    ? _db.DiscussionReports.Count(r => r.CommentId == c.Id && r.Status == ReportStatusOpen)
                     : 0,
                 CanEdit = !c.IsDeleted && (canModerate || c.UserId == uid),
                 CanDelete = !c.IsDeleted && (canModerate || c.UserId == uid)
@@ -216,6 +448,13 @@ public class DiscussionsController : ControllerBase
 
         await HydrateCommentAuthors(comments);
         thread.Comments = comments;
+        await MarkThreadRead(uid, threadId, DateTime.UtcNow);
+        await _db.SaveChangesAsync();
+        thread.IsSubscribed = await _db.DiscussionThreadSubscriptions
+            .AsNoTracking()
+            .AnyAsync(s => s.UserId == uid && s.ThreadId == threadId);
+        thread.HasUnread = false;
+        thread.UnreadCount = 0;
 
         return Ok(thread);
     }
@@ -288,6 +527,70 @@ public class DiscussionsController : ControllerBase
         return await GetThread(threadId);
     }
 
+    [HttpPost("thread/{threadId:guid}/subscription")]
+    public async Task<ActionResult<SubscriptionDto>> SetThreadSubscription(
+        [FromRoute] Guid threadId,
+        [FromBody] SubscriptionRequest req)
+    {
+        var exists = await _db.DiscussionThreads
+            .AsNoTracking()
+            .AnyAsync(t => t.Id == threadId && !t.IsDeleted);
+        if (!exists) return NotFound(ApiError.NotFound("Thread not found."));
+
+        var uid = CurrentUserId;
+        var subscription = await _db.DiscussionThreadSubscriptions
+            .FirstOrDefaultAsync(s => s.UserId == uid && s.ThreadId == threadId);
+
+        if (!req.Subscribed)
+        {
+            if (subscription != null)
+                _db.DiscussionThreadSubscriptions.Remove(subscription);
+
+            await _db.SaveChangesAsync();
+            return Ok(new SubscriptionDto
+            {
+                IsSubscribed = false,
+                NotificationsEnabled = false
+            });
+        }
+
+        var now = DateTime.UtcNow;
+        if (subscription == null)
+        {
+            subscription = new DiscussionThreadSubscription
+            {
+                Id = Guid.NewGuid(),
+                UserId = uid,
+                ThreadId = threadId,
+                CreatedUtc = now
+            };
+            _db.DiscussionThreadSubscriptions.Add(subscription);
+        }
+
+        subscription.NotificationsEnabled = req.NotificationsEnabled;
+        await MarkThreadRead(uid, threadId, now);
+        await _db.SaveChangesAsync();
+
+        return Ok(new SubscriptionDto
+        {
+            IsSubscribed = true,
+            NotificationsEnabled = subscription.NotificationsEnabled
+        });
+    }
+
+    [HttpPost("thread/{threadId:guid}/read")]
+    public async Task<ActionResult> MarkThreadRead([FromRoute] Guid threadId)
+    {
+        var exists = await _db.DiscussionThreads
+            .AsNoTracking()
+            .AnyAsync(t => t.Id == threadId && !t.IsDeleted);
+        if (!exists) return NotFound(ApiError.NotFound("Thread not found."));
+
+        await MarkThreadRead(CurrentUserId, threadId, DateTime.UtcNow);
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
     // POST: /api/discussions/thread/{threadId}/comments
     [EnableRateLimiting("comments")]
     [HttpPost("thread/{threadId:guid}/comments")]
@@ -304,6 +607,9 @@ public class DiscussionsController : ControllerBase
             return Conflict(ApiError.Conflict("This thread is locked."));
 
         var now = DateTime.UtcNow;
+        var postingError = await ValidateCommunityPost("comment", body.Value, null, threadId, now);
+        if (postingError != null) return postingError;
+
         var comment = new DiscussionComment
         {
             Id = Guid.NewGuid(),
@@ -315,6 +621,7 @@ public class DiscussionsController : ControllerBase
 
         thread.LastActivityUtc = now;
         _db.DiscussionComments.Add(comment);
+        await EnsureSubscribed(CurrentUserId, threadId, now);
         await _db.SaveChangesAsync();
 
         return Ok(new { id = comment.Id });
@@ -429,8 +736,11 @@ public class DiscussionsController : ControllerBase
                 ThreadId = threadId,
                 ReporterUserId = uid,
                 Reason = reason,
+                Status = ReportStatusOpen,
                 CreatedUtc = DateTime.UtcNow
             });
+            await _db.SaveChangesAsync();
+            await ApplyReportThresholds(threadId, null, DateTime.UtcNow);
             await _db.SaveChangesAsync();
         }
 
@@ -458,8 +768,11 @@ public class DiscussionsController : ControllerBase
                 CommentId = commentId,
                 ReporterUserId = uid,
                 Reason = reason,
+                Status = ReportStatusOpen,
                 CreatedUtc = DateTime.UtcNow
             });
+            await _db.SaveChangesAsync();
+            await ApplyReportThresholds(null, commentId, DateTime.UtcNow);
             await _db.SaveChangesAsync();
         }
 
@@ -472,23 +785,25 @@ public class DiscussionsController : ControllerBase
         string? category,
         string? tag)
     {
-        var term = q?.Trim().ToLowerInvariant();
+        var term = q?.Trim();
         if (!string.IsNullOrWhiteSpace(term))
         {
+            var searchTerm = Truncate(term, 120);
             query = query.Where(t =>
-                t.Title.ToLower().Contains(term) ||
-                t.Body.ToLower().Contains(term) ||
-                t.Category.ToLower().Contains(term) ||
-                (t.TagCsv != null && t.TagCsv.ToLower().Contains(term)));
+                EF.Functions.ToTsVector(
+                    "simple",
+                    t.Title + " " + t.Body + " " + t.Category + " " + (t.TagCsv ?? ""))
+                .Matches(EF.Functions.PlainToTsQuery("simple", searchTerm)));
         }
 
-        var normalizedCategory = category?.Trim().ToLowerInvariant();
-        if (!string.IsNullOrWhiteSpace(normalizedCategory) && normalizedCategory != "all")
-            query = query.Where(t => t.Category.ToLower() == normalizedCategory);
+        var normalizedCategory = category?.Trim();
+        if (!string.IsNullOrWhiteSpace(normalizedCategory) &&
+            !string.Equals(normalizedCategory, "all", StringComparison.OrdinalIgnoreCase))
+            query = query.Where(t => EF.Functions.ILike(t.Category, normalizedCategory));
 
         var normalizedTag = tag?.Trim().TrimStart('#').ToLowerInvariant();
         if (!string.IsNullOrWhiteSpace(normalizedTag))
-            query = query.Where(t => t.TagCsv != null && t.TagCsv.ToLower().Contains(normalizedTag));
+            query = query.Where(t => t.TagCsv != null && EF.Functions.ILike(t.TagCsv, $"%{normalizedTag}%"));
 
         return query;
     }
@@ -568,7 +883,7 @@ public class DiscussionsController : ControllerBase
                     .Select(r => r.Type)
                     .FirstOrDefault(),
                 ReportCount = canModerate
-                    ? _db.DiscussionReports.Count(r => r.ThreadId == t.Id)
+                    ? _db.DiscussionReports.Count(r => r.ThreadId == t.Id && r.Status == ReportStatusOpen)
                     : 0,
                 CanEdit = canModerate || t.UserId == uid,
                 CanDelete = canModerate || t.UserId == uid,
@@ -577,7 +892,193 @@ public class DiscussionsController : ControllerBase
             .ToListAsync();
 
         await HydrateThreadAuthors(threads);
+        await HydrateThreadActivity(threads);
         return threads;
+    }
+
+    private async Task HydrateThreadActivity(IReadOnlyCollection<ThreadSummaryDto> threads)
+    {
+        if (threads.Count == 0) return;
+
+        var uid = CurrentUserId;
+        var threadIds = threads.Select(t => t.Id).ToList();
+        var subscriptions = await _db.DiscussionThreadSubscriptions
+            .AsNoTracking()
+            .Where(s => s.UserId == uid && threadIds.Contains(s.ThreadId))
+            .Select(s => new { s.ThreadId, s.NotificationsEnabled })
+            .ToListAsync();
+        var subscriptionMap = subscriptions.ToDictionary(s => s.ThreadId);
+
+        var reads = await _db.DiscussionThreadReads
+            .AsNoTracking()
+            .Where(r => r.UserId == uid && threadIds.Contains(r.ThreadId))
+            .Select(r => new { r.ThreadId, r.LastReadUtc })
+            .ToListAsync();
+        var readMap = reads.ToDictionary(r => r.ThreadId, r => r.LastReadUtc);
+
+        var comments = await _db.DiscussionComments
+            .AsNoTracking()
+            .Where(c => threadIds.Contains(c.ThreadId) && !c.IsDeleted && c.UserId != uid)
+            .Select(c => new { c.ThreadId, c.CreatedUtc })
+            .ToListAsync();
+
+        foreach (var thread in threads)
+        {
+            thread.IsSubscribed = subscriptionMap.ContainsKey(thread.Id);
+            var lastReadUtc = readMap.GetValueOrDefault(thread.Id);
+            var comparisonUtc = lastReadUtc == default ? DateTime.MinValue : lastReadUtc;
+            thread.UnreadCount = thread.IsSubscribed
+                ? comments.Count(c => c.ThreadId == thread.Id && c.CreatedUtc > comparisonUtc)
+                : 0;
+            thread.HasUnread = thread.IsSubscribed && thread.UnreadCount > 0;
+        }
+    }
+
+    private async Task EnsureSubscribed(Guid userId, Guid threadId, DateTime now)
+    {
+        var exists = await _db.DiscussionThreadSubscriptions
+            .AnyAsync(s => s.UserId == userId && s.ThreadId == threadId);
+        if (exists) return;
+
+        _db.DiscussionThreadSubscriptions.Add(new DiscussionThreadSubscription
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            ThreadId = threadId,
+            NotificationsEnabled = true,
+            CreatedUtc = now
+        });
+    }
+
+    private async Task MarkThreadRead(Guid userId, Guid threadId, DateTime now)
+    {
+        var read = await _db.DiscussionThreadReads
+            .FirstOrDefaultAsync(r => r.UserId == userId && r.ThreadId == threadId);
+        if (read == null)
+        {
+            _db.DiscussionThreadReads.Add(new DiscussionThreadRead
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                ThreadId = threadId,
+                LastReadUtc = now
+            });
+            return;
+        }
+
+        read.LastReadUtc = now;
+    }
+
+    private async Task<ActionResult?> ValidateCommunityPost(
+        string kind,
+        string primaryText,
+        string? secondaryText,
+        Guid? threadId,
+        DateTime now)
+    {
+        if (IsModerator) return null;
+
+        var uid = CurrentUserId;
+        var user = await _db.Users
+            .AsNoTracking()
+            .Where(u => u.Id == uid)
+            .Select(u => new { u.TrustLevel, u.CommunitySuspendedUntilUtc })
+            .FirstOrDefaultAsync();
+        if (user == null) return Unauthorized(ApiError.Unauthorized("Sign in again to continue."));
+
+        if (user.CommunitySuspendedUntilUtc.HasValue && user.CommunitySuspendedUntilUtc.Value > now)
+        {
+            var retryAfter = Math.Max(1, (int)Math.Ceiling((user.CommunitySuspendedUntilUtc.Value - now).TotalSeconds));
+            Response.Headers["Retry-After"] = retryAfter.ToString();
+            return StatusCode(423, ApiError.RateLimited("Your community posting privileges are temporarily suspended."));
+        }
+
+        var trustLevel = Math.Clamp(user.TrustLevel, 0, 4);
+        var cooldown = kind == "thread"
+            ? GetThreadCooldown(trustLevel)
+            : GetCommentCooldown(trustLevel);
+        if (cooldown > TimeSpan.Zero)
+        {
+            var lastPostUtc = kind == "thread"
+                ? await _db.DiscussionThreads
+                    .AsNoTracking()
+                    .Where(t => t.UserId == uid)
+                    .OrderByDescending(t => t.CreatedUtc)
+                    .Select(t => (DateTime?)t.CreatedUtc)
+                    .FirstOrDefaultAsync()
+                : await _db.DiscussionComments
+                    .AsNoTracking()
+                    .Where(c => c.UserId == uid)
+                    .OrderByDescending(c => c.CreatedUtc)
+                    .Select(c => (DateTime?)c.CreatedUtc)
+                    .FirstOrDefaultAsync();
+
+            if (lastPostUtc.HasValue && now - lastPostUtc.Value < cooldown)
+            {
+                var retryAfter = Math.Max(1, (int)Math.Ceiling((cooldown - (now - lastPostUtc.Value)).TotalSeconds));
+                Response.Headers["Retry-After"] = retryAfter.ToString();
+                return StatusCode(
+                    StatusCodes.Status429TooManyRequests,
+                    ApiError.RateLimited($"Please wait {retryAfter} seconds before posting again."));
+            }
+        }
+
+        var fingerprint = NormalizePostFingerprint(primaryText, secondaryText);
+        var since = now.AddHours(-24);
+        var duplicate = kind == "thread"
+            ? (await _db.DiscussionThreads
+                .AsNoTracking()
+                .Where(t => t.UserId == uid && t.CreatedUtc >= since && !t.IsDeleted)
+                .Select(t => new { t.Title, t.Body })
+                .ToListAsync())
+                .Any(t => NormalizePostFingerprint(t.Title, t.Body) == fingerprint)
+            : (await _db.DiscussionComments
+                .AsNoTracking()
+                .Where(c => c.UserId == uid &&
+                    c.CreatedUtc >= since &&
+                    !c.IsDeleted &&
+                    (!threadId.HasValue || c.ThreadId == threadId.Value))
+                .Select(c => c.Body)
+                .ToListAsync())
+                .Any(body => NormalizePostFingerprint(body, null) == fingerprint);
+
+        return duplicate
+            ? Conflict(ApiError.Conflict("This looks like a duplicate of something you recently posted."))
+            : null;
+    }
+
+    private async Task ApplyReportThresholds(Guid? threadId, Guid? commentId, DateTime now)
+    {
+        if (threadId.HasValue)
+        {
+            var reportCount = await _db.DiscussionReports
+                .CountAsync(r => r.ThreadId == threadId.Value && r.Status == ReportStatusOpen);
+            if (reportCount < ThreadReportLockThreshold) return;
+
+            var thread = await _db.DiscussionThreads.FirstOrDefaultAsync(t => t.Id == threadId.Value);
+            if (thread == null) return;
+
+            thread.IsLocked = true;
+            thread.UpdatedUtc = now;
+            thread.LastActivityUtc = now;
+            return;
+        }
+
+        if (!commentId.HasValue) return;
+
+        var commentReportCount = await _db.DiscussionReports
+            .CountAsync(r => r.CommentId == commentId.Value && r.Status == ReportStatusOpen);
+        if (commentReportCount < CommentReportDeleteThreshold) return;
+
+        var comment = await _db.DiscussionComments
+            .Include(c => c.Thread)
+            .FirstOrDefaultAsync(c => c.Id == commentId.Value);
+        if (comment == null || comment.IsDeleted) return;
+
+        comment.IsDeleted = true;
+        comment.DeletedUtc = now;
+        comment.UpdatedUtc = now;
+        comment.Thread.LastActivityUtc = now;
     }
 
     private async Task HydrateThreadAuthors(IReadOnlyCollection<ThreadSummaryDto> threads)
@@ -694,6 +1195,34 @@ public class DiscussionsController : ControllerBase
     private bool CanModify(Guid authorUserId) =>
         IsModerator || authorUserId == CurrentUserId;
 
+    private static TimeSpan GetThreadCooldown(int trustLevel) => trustLevel switch
+    {
+        >= 3 => TimeSpan.Zero,
+        2 => TimeSpan.FromSeconds(20),
+        1 => TimeSpan.FromSeconds(60),
+        _ => TimeSpan.FromSeconds(120)
+    };
+
+    private static TimeSpan GetCommentCooldown(int trustLevel) => trustLevel switch
+    {
+        >= 3 => TimeSpan.Zero,
+        2 => TimeSpan.FromSeconds(5),
+        1 => TimeSpan.FromSeconds(15),
+        _ => TimeSpan.FromSeconds(30)
+    };
+
+    private static string NormalizeReportStatus(string? value, bool allowAll)
+    {
+        var status = value?.Trim();
+        if (allowAll && string.Equals(status, "All", StringComparison.OrdinalIgnoreCase))
+            return "All";
+        if (string.Equals(status, ReportStatusResolved, StringComparison.OrdinalIgnoreCase))
+            return ReportStatusResolved;
+        if (string.Equals(status, ReportStatusDismissed, StringComparison.OrdinalIgnoreCase))
+            return ReportStatusDismissed;
+        return ReportStatusOpen;
+    }
+
     private static string? NormalizeReactionType(string? value)
     {
         var type = value?.Trim().ToLowerInvariant();
@@ -729,6 +1258,19 @@ public class DiscussionsController : ControllerBase
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(8)
             .ToList();
+    }
+
+    private static string NormalizePostFingerprint(string first, string? second)
+    {
+        var text = string.IsNullOrWhiteSpace(second) ? first : $"{first} {second}";
+        var words = text.Trim().Split(null as char[], StringSplitOptions.RemoveEmptyEntries);
+        return string.Join(" ", words).ToUpperInvariant();
+    }
+
+    private static string Truncate(string value, int maxLength)
+    {
+        if (value.Length <= maxLength) return value;
+        return value[..maxLength].TrimEnd();
     }
 
     private static string? JoinTags(IEnumerable<string> tags)
@@ -774,10 +1316,30 @@ public class DiscussionsController : ControllerBase
         public string? Reason { get; set; }
     }
 
+    public sealed class SubscriptionRequest
+    {
+        public bool Subscribed { get; set; } = true;
+        public bool NotificationsEnabled { get; set; } = true;
+    }
+
+    public sealed class ModerateReportRequest
+    {
+        public string? Status { get; set; } = ReportStatusResolved;
+        public string? Resolution { get; set; }
+        public bool DeleteTarget { get; set; }
+        public bool LockThread { get; set; }
+    }
+
     public sealed class ModerateThreadRequest
     {
         public bool? IsPinned { get; set; }
         public bool? IsLocked { get; set; }
+    }
+
+    public sealed class SubscriptionDto
+    {
+        public bool IsSubscribed { get; set; }
+        public bool NotificationsEnabled { get; set; }
     }
 
     public sealed class ReactionResultDto
@@ -818,6 +1380,9 @@ public class DiscussionsController : ControllerBase
         public int ReactionCount { get; set; }
         public string? UserReaction { get; set; }
         public int ReportCount { get; set; }
+        public bool IsSubscribed { get; set; }
+        public bool HasUnread { get; set; }
+        public int UnreadCount { get; set; }
         public bool CanEdit { get; set; }
         public bool CanDelete { get; set; }
         public bool CanModerate { get; set; }
@@ -847,5 +1412,36 @@ public class DiscussionsController : ControllerBase
         public int ReportCount { get; set; }
         public bool CanEdit { get; set; }
         public bool CanDelete { get; set; }
+    }
+
+    public sealed class ReplyActivityDto
+    {
+        public Guid Id { get; set; }
+        public Guid ThreadId { get; set; }
+        public string ThreadTitle { get; set; } = "";
+        public int AniListId { get; set; }
+        public int? EpisodeNumber { get; set; }
+        public string Body { get; set; } = "";
+        public DateTime CreatedUtc { get; set; }
+        public int ReactionCount { get; set; }
+    }
+
+    public sealed class ModeratorReportDto
+    {
+        public Guid Id { get; set; }
+        public Guid ReporterUserId { get; set; }
+        public string ReporterDisplayName { get; set; } = "User";
+        public Guid ThreadId { get; set; }
+        public Guid? CommentId { get; set; }
+        public string TargetType { get; set; } = "thread";
+        public string ThreadTitle { get; set; } = "";
+        public string Excerpt { get; set; } = "";
+        public bool TargetDeleted { get; set; }
+        public string Reason { get; set; } = "";
+        public string Status { get; set; } = ReportStatusOpen;
+        public string? Resolution { get; set; }
+        public DateTime CreatedUtc { get; set; }
+        public DateTime? ResolvedUtc { get; set; }
+        public int OpenTargetReportCount { get; set; }
     }
 }

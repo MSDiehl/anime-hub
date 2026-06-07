@@ -193,12 +193,31 @@ namespace AnimeHub.Infrastructure.Migrations
                     b.Property<Guid>("ReporterUserId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("Resolution")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<Guid?>("ResolvedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("ResolvedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasDefaultValue("Open");
+
                     b.Property<Guid?>("ThreadId")
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
                     b.HasIndex("ReporterUserId");
+
+                    b.HasIndex("Status", "CreatedUtc");
 
                     b.HasIndex("CommentId", "ReporterUserId")
                         .IsUnique()
@@ -209,6 +228,61 @@ namespace AnimeHub.Infrastructure.Migrations
                         .HasFilter("\"ThreadId\" IS NOT NULL");
 
                     b.ToTable("DiscussionReports");
+                });
+
+            modelBuilder.Entity("AnimeHub.Domain.Entities.DiscussionThreadRead", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("LastReadUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ThreadId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ThreadId");
+
+                    b.HasIndex("UserId", "ThreadId")
+                        .IsUnique();
+
+                    b.ToTable("DiscussionThreadReads");
+                });
+
+            modelBuilder.Entity("AnimeHub.Domain.Entities.DiscussionThreadSubscription", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("NotificationsEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
+                    b.Property<Guid>("ThreadId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ThreadId");
+
+                    b.HasIndex("UserId", "ThreadId")
+                        .IsUnique();
+
+                    b.ToTable("DiscussionThreadSubscriptions");
                 });
 
             modelBuilder.Entity("AnimeHub.Domain.Entities.TrackedShowHistory", b =>
@@ -384,6 +458,9 @@ namespace AnimeHub.Infrastructure.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
 
+                    b.Property<DateTime?>("CommunitySuspendedUntilUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Email")
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
@@ -424,6 +501,11 @@ namespace AnimeHub.Infrastructure.Migrations
 
                     b.Property<bool>("TwoFactorEnabled")
                         .HasColumnType("boolean");
+
+                    b.Property<int>("TrustLevel")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
 
                     b.Property<string>("UserName")
                         .HasMaxLength(256)
@@ -612,6 +694,28 @@ namespace AnimeHub.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade);
 
                     b.Navigation("Comment");
+
+                    b.Navigation("Thread");
+                });
+
+            modelBuilder.Entity("AnimeHub.Domain.Entities.DiscussionThreadRead", b =>
+                {
+                    b.HasOne("AnimeHub.Domain.Entities.DiscussionThread", "Thread")
+                        .WithMany()
+                        .HasForeignKey("ThreadId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Thread");
+                });
+
+            modelBuilder.Entity("AnimeHub.Domain.Entities.DiscussionThreadSubscription", b =>
+                {
+                    b.HasOne("AnimeHub.Domain.Entities.DiscussionThread", "Thread")
+                        .WithMany()
+                        .HasForeignKey("ThreadId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("Thread");
                 });

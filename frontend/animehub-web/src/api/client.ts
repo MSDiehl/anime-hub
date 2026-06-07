@@ -153,9 +153,46 @@ export type ForumThreadSummary = {
   reactionCount: number;
   userReaction?: string | null;
   reportCount: number;
+  isSubscribed: boolean;
+  hasUnread: boolean;
+  unreadCount: number;
   canEdit: boolean;
   canDelete: boolean;
   canModerate: boolean;
+};
+
+export type ForumReplyActivity = {
+  id: string;
+  threadId: string;
+  threadTitle: string;
+  aniListId: number;
+  episodeNumber?: number | null;
+  body: string;
+  createdUtc: string;
+  reactionCount: number;
+};
+
+export type ModeratorReport = {
+  id: string;
+  reporterUserId: string;
+  reporterDisplayName: string;
+  threadId: string;
+  commentId?: string | null;
+  targetType: "thread" | "comment";
+  threadTitle: string;
+  excerpt: string;
+  targetDeleted: boolean;
+  reason: string;
+  status: "Open" | "Resolved" | "Dismissed";
+  resolution?: string | null;
+  createdUtc: string;
+  resolvedUtc?: string | null;
+  openTargetReportCount: number;
+};
+
+export type SubscriptionResult = {
+  isSubscribed: boolean;
+  notificationsEnabled: boolean;
 };
 
 export type AnimeSearchParams = {
@@ -302,6 +339,62 @@ export function getMostDiscussed(signal?: AbortSignal) {
     "/api/discussions/most-discussed?days=7&page=1&perPage=6",
     signal,
   ).then((data) => toPagedResult(data, 1, 6));
+}
+
+export function getMyForumThreads(page = 1, perPage = 10, signal?: AbortSignal) {
+  return apiGet<PagedResult<ForumThreadSummary> | ForumThreadSummary[]>(
+    `/api/discussions/me/threads?page=${page}&perPage=${perPage}`,
+    signal,
+  ).then((data) => toPagedResult(data, page, perPage));
+}
+
+export function getUnreadForumThreads(page = 1, perPage = 10, signal?: AbortSignal) {
+  return apiGet<PagedResult<ForumThreadSummary> | ForumThreadSummary[]>(
+    `/api/discussions/me/unread?page=${page}&perPage=${perPage}`,
+    signal,
+  ).then((data) => toPagedResult(data, page, perPage));
+}
+
+export function getMyForumReplies(page = 1, perPage = 10, signal?: AbortSignal) {
+  return apiGet<PagedResult<ForumReplyActivity> | ForumReplyActivity[]>(
+    `/api/discussions/me/replies?page=${page}&perPage=${perPage}`,
+    signal,
+  ).then((data) => toPagedResult(data, page, perPage));
+}
+
+export function getModeratorReports(status = "Open", page = 1, perPage = 20, signal?: AbortSignal) {
+  const params = new URLSearchParams({
+    status,
+    page: String(page),
+    perPage: String(perPage),
+  });
+
+  return apiGet<PagedResult<ModeratorReport> | ModeratorReport[]>(
+    `/api/discussions/mod/reports?${params}`,
+    signal,
+  ).then((data) => toPagedResult(data, page, perPage));
+}
+
+export function moderateReport(
+  reportId: string,
+  body: {
+    status?: "Open" | "Resolved" | "Dismissed";
+    resolution?: string;
+    deleteTarget?: boolean;
+    lockThread?: boolean;
+  },
+  signal?: AbortSignal,
+) {
+  return apiSend<void>(`/api/discussions/mod/reports/${reportId}`, "PATCH", body, signal);
+}
+
+export function setThreadSubscription(threadId: string, subscribed: boolean, signal?: AbortSignal) {
+  return apiSend<SubscriptionResult>(
+    `/api/discussions/thread/${threadId}/subscription`,
+    "POST",
+    { subscribed, notificationsEnabled: subscribed },
+    signal,
+  );
 }
 
 export function toPagedResult<T>(

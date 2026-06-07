@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { apiGet, apiSend } from "../api/client";
+import { apiGet, apiSend, setThreadSubscription } from "../api/client";
 import AppNav from "../components/AppNav";
 import { EmptyState, SkeletonBlock, useConfirm, useTextPrompt, useToast } from "../components/Feedback";
 import { SendIcon, TrashIcon } from "../components/Icons";
@@ -52,6 +52,9 @@ type ThreadDetail = {
   reactionCount: number;
   userReaction?: string | null;
   reportCount: number;
+  isSubscribed: boolean;
+  hasUnread: boolean;
+  unreadCount: number;
   canEdit: boolean;
   canDelete: boolean;
   canModerate: boolean;
@@ -198,6 +201,25 @@ export default function ForumThread({ onLogout }: Props) {
       pushToast("Report sent.", "success");
     } catch (e: unknown) {
       const message = getErrorMessage(e, "Report failed");
+      setError(message);
+      pushToast(message, "error");
+    }
+  }
+
+  async function toggleSubscription() {
+    if (!thread) return;
+
+    try {
+      const result = await setThreadSubscription(thread.id, !thread.isSubscribed);
+      setThread({
+        ...thread,
+        isSubscribed: result.isSubscribed,
+        hasUnread: false,
+        unreadCount: 0,
+      });
+      pushToast(result.isSubscribed ? "Thread watched." : "Thread unwatched.", "success");
+    } catch (e: unknown) {
+      const message = getErrorMessage(e, "Could not update watch state");
       setError(message);
       pushToast(message, "error");
     }
@@ -507,6 +529,12 @@ export default function ForumThread({ onLogout }: Props) {
                     </button>
                     <button className="forumTinyBtn" onClick={reportThread}>
                       Report
+                    </button>
+                    <button
+                      className={"forumTinyBtn" + (thread.isSubscribed ? " isActive" : "")}
+                      onClick={toggleSubscription}
+                    >
+                      {thread.isSubscribed ? "Watching" : "Watch"}
                     </button>
                     {thread.canEdit && (
                       <button className="forumTinyBtn" onClick={beginThreadEdit}>

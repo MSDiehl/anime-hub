@@ -17,5 +17,15 @@ public class DiscussionReport
     [MaxLength(1000)]
     public string Reason { get; set; } = "";
 
+    [MaxLength(32)]
+    public string Status { get; set; } = "Open";
+
+    [MaxLength(1000)]
+    public string? Resolution { get; set; }
+
+    public Guid? ResolvedByUserId { get; set; }
+
+    public DateTime? ResolvedUtc { get; set; }
+
     public DateTime CreatedUtc { get; set; } = DateTime.UtcNow;
 }

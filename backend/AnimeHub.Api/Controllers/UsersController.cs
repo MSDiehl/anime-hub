@@ -36,6 +36,7 @@ public class UsersController : ControllerBase
 
         var currentUserId = CurrentUserId();
         var canViewPrivateProfile = currentUserId == user.Id ||
+            User.IsInRole("Owner") ||
             User.IsInRole("Moderator") ||
             User.IsInRole("Admin");
         if (!user.IsProfilePublic && !canViewPrivateProfile)

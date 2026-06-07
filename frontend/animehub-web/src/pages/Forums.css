@@ -280,6 +280,7 @@
 
 .forumToolbar input,
 .forumToolbar select,
+.forumQueueHead select,
 .forumFormGrid input,
 .forumFormGrid select,
 .forumTitleInput,
@@ -300,6 +301,7 @@
 
 .forumToolbar input,
 .forumToolbar select,
+.forumQueueHead select,
 .forumFormGrid input,
 .forumFormGrid select,
 .forumTitleInput,
@@ -475,6 +477,115 @@
   border-radius: 18px;
   background: rgba(255,255,255,0.11);
   border: 1px solid rgba(255,255,255,0.12);
+}
+
+.forumCommunityGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 22px;
+}
+
+.forumActivityPanel {
+  min-height: 220px;
+}
+
+.forumMiniList,
+.forumReportList {
+  display: grid;
+  gap: 10px;
+}
+
+.forumMiniItem {
+  width: 100%;
+  border: 3px solid var(--ink);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+  padding: 10px;
+  display: grid;
+  gap: 5px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 4px 4px 0 rgba(0,0,0,0.24);
+}
+
+.forumMiniItem span {
+  font-weight: 1000;
+  line-height: 1.18;
+}
+
+.forumMiniItem small,
+.forumMiniEmpty,
+.forumReportItem small {
+  opacity: 0.68;
+  font-weight: 900;
+}
+
+.forumQueuePanel {
+  margin-top: 18px;
+}
+
+.forumQueueHead {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  position: relative;
+  z-index: 1;
+}
+
+.forumQueueHead select {
+  max-width: 190px;
+}
+
+.forumReportItem {
+  border: 3px solid var(--ink);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.78);
+  color: var(--ink);
+  padding: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  position: relative;
+  z-index: 1;
+}
+
+.forumReportMain {
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.forumReportMain h3 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.15;
+}
+
+.forumReportMain p {
+  margin: 0;
+  line-height: 1.35;
+  font-weight: 850;
+  overflow-wrap: anywhere;
+}
+
+.forumReportActions {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .forumPager {
@@ -705,6 +816,7 @@
 @media (max-width: 900px) {
   .forumHeroGrid,
   .forumProfileGrid,
+  .forumCommunityGrid,
   .forumThreadCard {
     grid-template-columns: 1fr;
   }
@@ -739,6 +851,14 @@
   .forumFormGrid,
   .forumFavoriteGrid {
     grid-template-columns: 1fr;
+  }
+
+  .forumReportItem {
+    grid-template-columns: 1fr;
+  }
+
+  .forumReportActions {
+    justify-content: flex-start;
   }
 
   .forumThreadTitle {

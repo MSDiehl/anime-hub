@@ -1,10 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  apiGet,
   apiSend,
+  getModeratorReports,
   getForumThreads,
   getMostDiscussed,
+  getMyForumReplies,
+  getMyForumThreads,
+  getUnreadForumThreads,
+  moderateReport,
+  setThreadSubscription,
+  type ForumReplyActivity,
   type ForumThreadSummary,
+  type ModeratorReport,
   type PagedResult,
 } from "../api/client";
 import AppNav from "../components/AppNav";
@@ -29,6 +38,11 @@ type ReactionResult = {
   userReaction?: string | null;
 };
 
+type MeDto = {
+  canModerate?: boolean;
+  roles?: string[];
+};
+
 const categories = [
   "General",
   "Episode",
@@ -46,14 +60,23 @@ export default function Forums({ onLogout }: Props) {
   const { pushToast } = useToast();
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [hotThreads, setHotThreads] = useState<ThreadSummary[]>([]);
+  const [unreadThreads, setUnreadThreads] = useState<ThreadSummary[]>([]);
+  const [myThreads, setMyThreads] = useState<ThreadSummary[]>([]);
+  const [myReplies, setMyReplies] = useState<ForumReplyActivity[]>([]);
+  const [reportQueue, setReportQueue] = useState<ModeratorReport[]>([]);
   const [pageInfo, setPageInfo] = useState<PagedResult<ThreadSummary> | null>(null);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [activityLoading, setActivityLoading] = useState(true);
+  const [modLoading, setModLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activityError, setActivityError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState("active");
   const [category, setCategory] = useState("All");
   const [tag, setTag] = useState("");
+  const [reportStatus, setReportStatus] = useState("Open");
+  const [canModerateUser, setCanModerateUser] = useState(false);
 
   const [animeId, setAnimeId] = useState("");
   const [episode, setEpisode] = useState("");
@@ -66,8 +89,8 @@ export default function Forums({ onLogout }: Props) {
   const [creating, setCreating] = useState(false);
 
   const canModerate = useMemo(
-    () => threads.some((thread) => thread.canModerate),
-    [threads],
+    () => canModerateUser || threads.some((thread) => thread.canModerate),
+    [canModerateUser, threads],
   );
 
   async function loadThreads() {
@@ -102,11 +125,76 @@ export default function Forums({ onLogout }: Props) {
     }
   }
 
+  async function loadCommunityData(showLoading = true) {
+    if (showLoading) setActivityLoading(true);
+    setActivityError(null);
+
+    try {
+      const [me, unread, mine, replies] = await Promise.all([
+        apiGet<MeDto>("/api/auth/me"),
+        getUnreadForumThreads(1, 6),
+        getMyForumThreads(1, 5),
+        getMyForumReplies(1, 5),
+      ]);
+      const moderator = Boolean(
+        me.canModerate ||
+          me.roles?.some((role) => ["Owner", "Admin", "Moderator"].includes(role)),
+      );
+      setCanModerateUser(moderator);
+      setUnreadThreads(unread.items);
+      setMyThreads(mine.items);
+      setMyReplies(replies.items);
+
+      if (moderator) {
+        setModLoading(true);
+        try {
+          const reports = await getModeratorReports(reportStatus, 1, 12);
+          setReportQueue(reports.items);
+        } finally {
+          setModLoading(false);
+        }
+      } else {
+        setReportQueue([]);
+      }
+    } catch (e: unknown) {
+      setActivityError(getErrorMessage(e, "Failed to load community activity"));
+      setUnreadThreads([]);
+      setMyThreads([]);
+      setMyReplies([]);
+      setReportQueue([]);
+    } finally {
+      if (showLoading) setActivityLoading(false);
+    }
+  }
+
+  async function loadReportQueue() {
+    if (!canModerate) return;
+
+    setModLoading(true);
+    try {
+      const reports = await getModeratorReports(reportStatus, 1, 12);
+      setReportQueue(reports.items);
+    } catch (e: unknown) {
+      const message = getErrorMessage(e, "Failed to load reports");
+      setActivityError(message);
+      pushToast(message, "error");
+      setReportQueue([]);
+    } finally {
+      setModLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadThreads();
     loadHotThreads();
+    loadCommunityData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sort, category, page]);
+
+  useEffect(() => {
+    loadReportQueue();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reportStatus]);
 
   function runForumSearch() {
     if (page === 1) {
@@ -157,6 +245,7 @@ export default function Forums({ onLogout }: Props) {
       setContainsSpoilers(false);
       setPreview(false);
       await loadHotThreads();
+      await loadCommunityData(false);
       pushToast("Thread posted.", "success");
       navigate(`/forums/thread/${json.id}`);
     } catch (e: unknown) {
@@ -206,6 +295,25 @@ export default function Forums({ onLogout }: Props) {
     }
   }
 
+  async function toggleSubscription(thread: ThreadSummary) {
+    try {
+      const result = await setThreadSubscription(thread.id, !thread.isSubscribed);
+      updateThread(thread.id, {
+        isSubscribed: result.isSubscribed,
+        hasUnread: result.isSubscribed ? thread.hasUnread : false,
+        unreadCount: result.isSubscribed ? thread.unreadCount : 0,
+      });
+      if (!result.isSubscribed) {
+        setUnreadThreads((prev) => prev.filter((item) => item.id !== thread.id));
+      }
+      pushToast(result.isSubscribed ? "Thread watched." : "Thread unwatched.", "success");
+    } catch (e: unknown) {
+      const message = getErrorMessage(e, "Could not update watch state");
+      setError(message);
+      pushToast(message, "error");
+    }
+  }
+
   async function deleteThread(threadId: string) {
     const confirmed = await confirm({
       title: "Delete thread?",
@@ -219,6 +327,8 @@ export default function Forums({ onLogout }: Props) {
       await apiSend<void>(`/api/discussions/thread/${threadId}`, "DELETE");
       setThreads((prev) => prev.filter((thread) => thread.id !== threadId));
       setHotThreads((prev) => prev.filter((thread) => thread.id !== threadId));
+      setUnreadThreads((prev) => prev.filter((thread) => thread.id !== threadId));
+      setMyThreads((prev) => prev.filter((thread) => thread.id !== threadId));
       pushToast("Thread deleted.", "success");
     } catch (e: unknown) {
       const message = getErrorMessage(e, "Delete failed");
@@ -236,6 +346,7 @@ export default function Forums({ onLogout }: Props) {
       );
       await loadThreads();
       await loadHotThreads();
+      await loadCommunityData(false);
       pushToast("Thread updated.", "success");
     } catch (e: unknown) {
       const message = getErrorMessage(e, "Moderation failed");
@@ -244,16 +355,56 @@ export default function Forums({ onLogout }: Props) {
     }
   }
 
+  async function handleReportAction(
+    report: ModeratorReport,
+    patch: {
+      status?: "Open" | "Resolved" | "Dismissed";
+      resolution?: string;
+      deleteTarget?: boolean;
+      lockThread?: boolean;
+    },
+  ) {
+    if (patch.deleteTarget) {
+      const confirmed = await confirm({
+        title: "Remove reported content?",
+        message: "This hides the reported thread or reply and closes the report.",
+        confirmLabel: "Remove",
+        danger: true,
+      });
+      if (!confirmed) return;
+    }
+
+    try {
+      await moderateReport(report.id, patch);
+      await loadReportQueue();
+      await loadThreads();
+      await loadHotThreads();
+      await loadCommunityData(false);
+      pushToast("Report updated.", "success");
+    } catch (e: unknown) {
+      const message = getErrorMessage(e, "Report action failed");
+      setActivityError(message);
+      pushToast(message, "error");
+    }
+  }
+
   function updateThread(threadId: string, patch: Partial<ThreadSummary>) {
-    setThreads((prev) =>
-      prev.map((thread) =>
+    const applyPatch = (items: ThreadSummary[]) =>
+      items.map((thread) =>
         thread.id === threadId ? { ...thread, ...patch } : thread,
-      ),
+      );
+
+    setThreads((prev) =>
+      applyPatch(prev),
     );
     setHotThreads((prev) =>
-      prev.map((thread) =>
-        thread.id === threadId ? { ...thread, ...patch } : thread,
-      ),
+      applyPatch(prev),
+    );
+    setMyThreads((prev) => applyPatch(prev));
+    setUnreadThreads((prev) =>
+      patch.isSubscribed === false || patch.hasUnread === false
+        ? prev.filter((thread) => thread.id !== threadId)
+        : applyPatch(prev),
     );
   }
 
@@ -407,6 +558,107 @@ export default function Forums({ onLogout }: Props) {
           </div>
         </section>
 
+        {activityError && <div className="forumError">{activityError}</div>}
+
+        <section className="forumCommunityGrid">
+          <div className="forumPanel forumActivityPanel">
+            <div className="forumPanelTag">Watching</div>
+            <h2 className="forumPanelTitle">Unread activity</h2>
+            {activityLoading ? (
+              <SkeletonBlock rows={3} />
+            ) : (
+              <MiniThreadList
+                emptyMessage="Watched threads with new replies will appear here."
+                onOpen={(thread) => navigate(`/forums/thread/${thread.id}`)}
+                threads={unreadThreads}
+              />
+            )}
+          </div>
+
+          <div className="forumPanel forumActivityPanel">
+            <div className="forumPanelTag">Mine</div>
+            <h2 className="forumPanelTitle">My threads</h2>
+            {activityLoading ? (
+              <SkeletonBlock rows={3} />
+            ) : (
+              <MiniThreadList
+                emptyMessage="Threads you start will appear here."
+                onOpen={(thread) => navigate(`/forums/thread/${thread.id}`)}
+                threads={myThreads}
+              />
+            )}
+          </div>
+
+          <div className="forumPanel forumActivityPanel">
+            <div className="forumPanelTag">Replies</div>
+            <h2 className="forumPanelTitle">My replies</h2>
+            {activityLoading ? (
+              <SkeletonBlock rows={3} />
+            ) : (
+              <MiniReplyList
+                emptyMessage="Replies you post will appear here."
+                onOpen={(reply) => navigate(`/forums/thread/${reply.threadId}`)}
+                replies={myReplies}
+              />
+            )}
+          </div>
+        </section>
+
+        {canModerate && (
+          <section className="forumPanel forumQueuePanel">
+            <div className="forumPanelTag">Moderate</div>
+            <div className="forumQueueHead">
+              <div>
+                <h2 className="forumPanelTitle">Report queue</h2>
+                <div className="forumThreadMeta">
+                  <span>{reportQueue.length} visible</span>
+                  {modLoading && <span>Refreshing</span>}
+                </div>
+              </div>
+              <select
+                value={reportStatus}
+                onChange={(event) => setReportStatus(event.target.value)}
+              >
+                <option value="Open">Open</option>
+                <option value="Resolved">Resolved</option>
+                <option value="Dismissed">Dismissed</option>
+                <option value="All">All</option>
+              </select>
+            </div>
+            <ReportQueueList
+              loading={modLoading}
+              onDelete={(report) =>
+                handleReportAction(report, {
+                  status: "Resolved",
+                  resolution: "Removed reported content.",
+                  deleteTarget: true,
+                })
+              }
+              onDismiss={(report) =>
+                handleReportAction(report, {
+                  status: "Dismissed",
+                  resolution: "Dismissed by moderator.",
+                })
+              }
+              onLock={(report) =>
+                handleReportAction(report, {
+                  status: "Resolved",
+                  resolution: "Locked thread for review.",
+                  lockThread: true,
+                })
+              }
+              onOpen={(report) => navigate(`/forums/thread/${report.threadId}`)}
+              onResolve={(report) =>
+                handleReportAction(report, {
+                  status: "Resolved",
+                  resolution: "Handled by moderator.",
+                })
+              }
+              reports={reportQueue}
+            />
+          </section>
+        )}
+
         <section className="forumToolbar">
           <input
             value={search}
@@ -477,6 +729,7 @@ export default function Forums({ onLogout }: Props) {
                 onAuthor={() => navigate(`/users/${thread.authorUserId}`)}
                 onReact={() => toggleReaction(thread.id)}
                 onReport={() => reportThread(thread.id)}
+                onSubscribe={() => toggleSubscription(thread)}
                 onDelete={() => deleteThread(thread.id)}
                 onPin={() => moderateThread(thread.id, { isPinned: !thread.isPinned })}
                 onLock={() => moderateThread(thread.id, { isLocked: !thread.isLocked })}
@@ -520,6 +773,7 @@ function ThreadCard({
   onAuthor,
   onReact,
   onReport,
+  onSubscribe,
   onDelete,
   onPin,
   onLock,
@@ -531,6 +785,7 @@ function ThreadCard({
   onAuthor: () => void;
   onReact: () => void;
   onReport: () => void;
+  onSubscribe: () => void;
   onDelete: () => void;
   onPin: () => void;
   onLock: () => void;
@@ -539,6 +794,7 @@ function ThreadCard({
     <article className="forumThreadCard">
       <button className="forumThreadMain" onClick={onOpen}>
         <div className="forumThreadBadges">
+          {thread.hasUnread && <span>{thread.unreadCount} new</span>}
           {thread.isPinned && <span>Pinned</span>}
           {thread.isLocked && <span>Locked</span>}
           {thread.containsSpoilers && <span>Spoilers</span>}
@@ -574,6 +830,12 @@ function ThreadCard({
         <button className="forumTinyBtn" onClick={onReport}>
           Report
         </button>
+        <button
+          className={"forumTinyBtn" + (thread.isSubscribed ? " isActive" : "")}
+          onClick={onSubscribe}
+        >
+          {thread.isSubscribed ? "Watching" : "Watch"}
+        </button>
         {thread.canDelete && (
           <button className="forumTinyBtn danger" onClick={onDelete}>
             <TrashIcon size={15} /> Delete
@@ -595,6 +857,129 @@ function ThreadCard({
   );
 }
 
+function MiniThreadList({
+  threads,
+  emptyMessage,
+  onOpen,
+}: {
+  threads: ThreadSummary[];
+  emptyMessage: string;
+  onOpen: (thread: ThreadSummary) => void;
+}) {
+  if (threads.length === 0) {
+    return <div className="forumMiniEmpty">{emptyMessage}</div>;
+  }
+
+  return (
+    <div className="forumMiniList">
+      {threads.map((thread) => (
+        <button key={thread.id} className="forumMiniItem" onClick={() => onOpen(thread)}>
+          <span>{thread.title}</span>
+          <small>
+            {thread.hasUnread ? `${thread.unreadCount} new - ` : ""}
+            {thread.commentCount} replies
+          </small>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function MiniReplyList({
+  replies,
+  emptyMessage,
+  onOpen,
+}: {
+  replies: ForumReplyActivity[];
+  emptyMessage: string;
+  onOpen: (reply: ForumReplyActivity) => void;
+}) {
+  if (replies.length === 0) {
+    return <div className="forumMiniEmpty">{emptyMessage}</div>;
+  }
+
+  return (
+    <div className="forumMiniList">
+      {replies.map((reply) => (
+        <button key={reply.id} className="forumMiniItem" onClick={() => onOpen(reply)}>
+          <span>{reply.threadTitle}</span>
+          <small>{shortText(reply.body, 72)}</small>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ReportQueueList({
+  reports,
+  loading,
+  onOpen,
+  onResolve,
+  onDismiss,
+  onDelete,
+  onLock,
+}: {
+  reports: ModeratorReport[];
+  loading: boolean;
+  onOpen: (report: ModeratorReport) => void;
+  onResolve: (report: ModeratorReport) => void;
+  onDismiss: (report: ModeratorReport) => void;
+  onDelete: (report: ModeratorReport) => void;
+  onLock: (report: ModeratorReport) => void;
+}) {
+  if (loading && reports.length === 0) {
+    return <SkeletonBlock rows={4} />;
+  }
+
+  if (reports.length === 0) {
+    return <div className="forumMiniEmpty">No reports match this view.</div>;
+  }
+
+  return (
+    <div className="forumReportList">
+      {reports.map((report) => (
+        <article key={report.id} className="forumReportItem">
+          <button className="forumReportMain" onClick={() => onOpen(report)}>
+            <div className="forumThreadBadges">
+              <span>{report.status}</span>
+              <span>{report.targetType}</span>
+              {report.openTargetReportCount > 1 && (
+                <span>{report.openTargetReportCount} open reports</span>
+              )}
+              {report.targetDeleted && <span>Hidden</span>}
+            </div>
+            <h3>{report.threadTitle}</h3>
+            <p>{report.excerpt || report.reason}</p>
+            <small>
+              Reported by {report.reporterDisplayName} - {formatDate(report.createdUtc)}
+            </small>
+          </button>
+          <div className="forumReportActions">
+            {report.status === "Open" ? (
+              <>
+                <button className="forumTinyBtn" onClick={() => onResolve(report)}>
+                  Resolve
+                </button>
+                <button className="forumTinyBtn" onClick={() => onDismiss(report)}>
+                  Dismiss
+                </button>
+                <button className="forumTinyBtn" onClick={() => onLock(report)}>
+                  Lock
+                </button>
+                <button className="forumTinyBtn danger" onClick={() => onDelete(report)}>
+                  Hide
+                </button>
+              </>
+            ) : (
+              <small>{report.resolution ?? "Closed"}</small>
+            )}
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
 export function Avatar({ name, url }: { name: string; url?: string | null }) {
   const initial = name.trim().charAt(0).toUpperCase() || "U";
 
@@ -609,6 +994,11 @@ export function Avatar({ name, url }: { name: string; url?: string | null }) {
       {initial}
     </span>
   );
+}
+
+function shortText(value: string, maxLength: number) {
+  const trimmed = value.trim();
+  return trimmed.length <= maxLength ? trimmed : `${trimmed.slice(0, maxLength - 3).trim()}...`;
 }
 
 function formatDate(value: string) {

@@ -18,6 +18,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid
     public DbSet<DiscussionComment> DiscussionComments => Set<DiscussionComment>();
     public DbSet<DiscussionReaction> DiscussionReactions => Set<DiscussionReaction>();
     public DbSet<DiscussionReport> DiscussionReports => Set<DiscussionReport>();
+    public DbSet<DiscussionThreadSubscription> DiscussionThreadSubscriptions => Set<DiscussionThreadSubscription>();
+    public DbSet<DiscussionThreadRead> DiscussionThreadReads => Set<DiscussionThreadRead>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -55,6 +57,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid
             entity.Property(x => x.DisplayName).HasMaxLength(80);
             entity.Property(x => x.AvatarUrl).HasMaxLength(1000);
             entity.Property(x => x.IsProfilePublic).HasDefaultValue(true);
+            entity.Property(x => x.TrustLevel).HasDefaultValue(0);
         });
 
         // -------------------------
@@ -128,8 +131,11 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid
                 .IsUnique()
                 .HasFilter("\"CommentId\" IS NOT NULL");
             entity.HasIndex(x => x.ReporterUserId);
+            entity.HasIndex(x => new { x.Status, x.CreatedUtc });
 
             entity.Property(x => x.Reason).HasMaxLength(1000);
+            entity.Property(x => x.Status).HasMaxLength(32).HasDefaultValue("Open");
+            entity.Property(x => x.Resolution).HasMaxLength(1000);
 
             entity.HasOne(x => x.Thread)
                 .WithMany()
@@ -139,6 +145,34 @@ public class AppDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid
             entity.HasOne(x => x.Comment)
                 .WithMany()
                 .HasForeignKey(x => x.CommentId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<DiscussionThreadSubscription>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+
+            entity.HasIndex(x => x.ThreadId);
+            entity.HasIndex(x => new { x.UserId, x.ThreadId }).IsUnique();
+
+            entity.Property(x => x.NotificationsEnabled).HasDefaultValue(true);
+
+            entity.HasOne(x => x.Thread)
+                .WithMany()
+                .HasForeignKey(x => x.ThreadId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<DiscussionThreadRead>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+
+            entity.HasIndex(x => x.ThreadId);
+            entity.HasIndex(x => new { x.UserId, x.ThreadId }).IsUnique();
+
+            entity.HasOne(x => x.Thread)
+                .WithMany()
+                .HasForeignKey(x => x.ThreadId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }

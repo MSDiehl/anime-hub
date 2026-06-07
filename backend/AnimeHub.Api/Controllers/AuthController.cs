@@ -331,8 +331,10 @@ public class AuthController : ControllerBase
             user.DisplayName,
             user.AvatarUrl,
             user.IsProfilePublic,
+            user.TrustLevel,
             Roles = roles,
             CanModerate = roles.Any(role =>
+                string.Equals(role, "Owner", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(role, "Moderator", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase))
         };
@@ -377,6 +379,14 @@ public class AuthController : ControllerBase
 
         await _db.DiscussionReports
             .Where(report => report.ReporterUserId == userId)
+            .ExecuteDeleteAsync();
+
+        await _db.DiscussionThreadSubscriptions
+            .Where(subscription => subscription.UserId == userId)
+            .ExecuteDeleteAsync();
+
+        await _db.DiscussionThreadReads
+            .Where(read => read.UserId == userId)
             .ExecuteDeleteAsync();
 
         await _db.DiscussionComments
