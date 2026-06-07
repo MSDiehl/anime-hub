@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { csrfFetch } from "../api/csrf";
+import { apiGet } from "../api/client";
 import AppNav from "../components/AppNav";
 import { CoverFallback, EmptyState, SkeletonBlock, useToast } from "../components/Feedback";
 import { ChevronLeftIcon, ChevronRightIcon } from "../components/Icons";
-import { getErrorMessage, readApiError } from "../utils/apiError";
+import { getErrorMessage } from "../utils/apiError";
 import "./Schedule.css";
 
 type Props = { onLogout: () => void | Promise<void> };
@@ -164,11 +164,7 @@ export default function Schedule({ onLogout }: Props) {
         unwatchedOnly: unwatchedOnly ? "true" : "false",
       });
 
-      const res = await csrfFetch(`/api/schedule/week?${params.toString()}`, {
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error(await readApiError(res));
-      setItems(await res.json());
+      setItems(await apiGet<ScheduleItem[]>(`/api/schedule/week?${params.toString()}`));
     } catch (e: unknown) {
       setError(getErrorMessage(e, "Failed to load schedule"));
       setItems([]);
@@ -365,16 +361,18 @@ export default function Schedule({ onLogout }: Props) {
           </button>
         </div>
 
-        {error && (
-          <div className="schedPanel schedError">
-            <div className="schedErrorTitle">BAM!</div>
-            <div className="schedErrorMsg">{error}</div>
-          </div>
-        )}
-
         {loading ? (
           <div className="schedPanel">
             <SkeletonBlock rows={6} />
+          </div>
+        ) : error ? (
+          <div className="schedPanel">
+            <EmptyState
+              actionLabel="Retry"
+              message={error}
+              onAction={load}
+              title="Could not load schedule"
+            />
           </div>
         ) : (
           <div className={viewMode === "month" ? "schedGrid schedMonthGrid" : "schedGrid"}>

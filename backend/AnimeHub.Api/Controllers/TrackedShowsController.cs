@@ -8,6 +8,7 @@ using AnimeHub.Domain.Entities;
 using AnimeHub.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 namespace AnimeHub.Api.Controllers;
@@ -223,6 +224,7 @@ public class TrackedShowsController : ControllerBase
         return File(Encoding.UTF8.GetBytes(json), "application/json", "animehub-tracked.json");
     }
 
+    [EnableRateLimiting("imports")]
     [HttpPost("import")]
     public async Task<ActionResult<ImportResultDto>> Import([FromBody] List<ImportTrackedShowRequest>? items)
     {

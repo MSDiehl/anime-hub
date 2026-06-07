@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { csrfFetch } from "../api/csrf";
+import { apiGet, apiSend } from "../api/client";
 import AppNav from "../components/AppNav";
 import { EmptyState, SkeletonBlock, useConfirm, useTextPrompt, useToast } from "../components/Feedback";
 import { SendIcon, TrashIcon } from "../components/Icons";
-import { getErrorMessage, readApiError } from "../utils/apiError";
+import { getErrorMessage } from "../utils/apiError";
 import { renderMarkdown } from "../utils/markdown";
 import { Avatar } from "./Forums";
 import "./Forums.css";
@@ -91,12 +91,7 @@ export default function ForumThread({ onLogout }: Props) {
     if (showLoading) setLoading(true);
     setError(null);
     try {
-      const res = await csrfFetch(`/api/discussions/thread/${threadId}`, {
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error(await readApiError(res, "Failed to load thread"));
-      const json = (await res.json()) as ThreadDetail;
-      setThread(json);
+      setThread(await apiGet<ThreadDetail>(`/api/discussions/thread/${threadId}`));
     } catch (e: unknown) {
       setError(getErrorMessage(e, "Failed to load thread"));
       setThread(null);
@@ -125,11 +120,10 @@ export default function ForumThread({ onLogout }: Props) {
 
     setError(null);
     try {
-      const res = await csrfFetch(`/api/discussions/thread/${thread.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
+      await apiSend<ThreadDetail>(
+        `/api/discussions/thread/${thread.id}`,
+        "PATCH",
+        {
           title: editTitle,
           body: editBody,
           category: editCategory,
@@ -138,9 +132,8 @@ export default function ForumThread({ onLogout }: Props) {
             .map((item) => item.trim())
             .filter(Boolean),
           containsSpoilers: editSpoilers,
-        }),
-      });
-      if (!res.ok) throw new Error(await readApiError(res, "Failed to save thread"));
+        },
+      );
       setEditingThread(false);
       await loadThread();
       pushToast("Thread saved.", "success");
@@ -163,11 +156,7 @@ export default function ForumThread({ onLogout }: Props) {
 
     setError(null);
     try {
-      const res = await csrfFetch(`/api/discussions/thread/${thread.id}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error(await readApiError(res, "Delete failed"));
+      await apiSend<void>(`/api/discussions/thread/${thread.id}`, "DELETE");
       pushToast("Thread deleted.", "success");
       navigate("/forums");
     } catch (e: unknown) {
@@ -182,13 +171,7 @@ export default function ForumThread({ onLogout }: Props) {
 
     setError(null);
     try {
-      const res = await csrfFetch(`/api/discussions/thread/${thread.id}/moderation`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(patch),
-      });
-      if (!res.ok) throw new Error(await readApiError(res, "Moderation failed"));
+      await apiSend<ThreadDetail>(`/api/discussions/thread/${thread.id}/moderation`, "PATCH", patch);
       await loadThread();
       pushToast("Thread updated.", "success");
     } catch (e: unknown) {
@@ -211,13 +194,7 @@ export default function ForumThread({ onLogout }: Props) {
 
     setError(null);
     try {
-      const res = await csrfFetch(`/api/discussions/thread/${thread.id}/reports`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ reason }),
-      });
-      if (!res.ok) throw new Error(await readApiError(res, "Report failed"));
+      await apiSend<void>(`/api/discussions/thread/${thread.id}/reports`, "POST", { reason });
       pushToast("Report sent.", "success");
     } catch (e: unknown) {
       const message = getErrorMessage(e, "Report failed");
@@ -230,14 +207,11 @@ export default function ForumThread({ onLogout }: Props) {
     if (!thread) return;
 
     try {
-      const res = await csrfFetch(`/api/discussions/thread/${thread.id}/reactions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ type: "upvote" }),
-      });
-      if (!res.ok) throw new Error(await readApiError(res, "Reaction failed"));
-      const json = (await res.json()) as ReactionResult;
+      const json = await apiSend<ReactionResult>(
+        `/api/discussions/thread/${thread.id}/reactions`,
+        "POST",
+        { type: "upvote" },
+      );
       setThread({
         ...thread,
         reactionCount: json.count,
@@ -281,13 +255,7 @@ export default function ForumThread({ onLogout }: Props) {
     });
 
     try {
-      const res = await csrfFetch(`/api/discussions/thread/${thread.id}/comments`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ body }),
-      });
-      if (!res.ok) throw new Error(await readApiError(res, "Failed to post reply"));
+      await apiSend<{ id: string }>(`/api/discussions/thread/${thread.id}/comments`, "POST", { body });
       await loadThread(false);
       pushToast("Reply posted.", "success");
     } catch (e: unknown) {
@@ -305,14 +273,11 @@ export default function ForumThread({ onLogout }: Props) {
     if (!thread) return;
 
     try {
-      const res = await csrfFetch(`/api/discussions/comments/${commentId}/reactions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ type: "upvote" }),
-      });
-      if (!res.ok) throw new Error(await readApiError(res, "Reaction failed"));
-      const json = (await res.json()) as ReactionResult;
+      const json = await apiSend<ReactionResult>(
+        `/api/discussions/comments/${commentId}/reactions`,
+        "POST",
+        { type: "upvote" },
+      );
       setThread({
         ...thread,
         comments: thread.comments.map((comment) =>
@@ -343,13 +308,7 @@ export default function ForumThread({ onLogout }: Props) {
     if (reason === null) return;
 
     try {
-      const res = await csrfFetch(`/api/discussions/comments/${commentId}/reports`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ reason }),
-      });
-      if (!res.ok) throw new Error(await readApiError(res, "Report failed"));
+      await apiSend<void>(`/api/discussions/comments/${commentId}/reports`, "POST", { reason });
       pushToast("Report sent.", "success");
     } catch (e: unknown) {
       const message = getErrorMessage(e, "Report failed");
@@ -366,13 +325,11 @@ export default function ForumThread({ onLogout }: Props) {
   async function saveComment(commentId: string) {
     setError(null);
     try {
-      const res = await csrfFetch(`/api/discussions/comments/${commentId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ body: editingCommentBody }),
-      });
-      if (!res.ok) throw new Error(await readApiError(res, "Failed to save reply"));
+      await apiSend<{ id: string }>(
+        `/api/discussions/comments/${commentId}`,
+        "PATCH",
+        { body: editingCommentBody },
+      );
       setEditingCommentId(null);
       setEditingCommentBody("");
       await loadThread();
@@ -394,11 +351,7 @@ export default function ForumThread({ onLogout }: Props) {
     if (!confirmed) return;
 
     try {
-      const res = await csrfFetch(`/api/discussions/comments/${commentId}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error(await readApiError(res, "Delete failed"));
+      await apiSend<void>(`/api/discussions/comments/${commentId}`, "DELETE");
       await loadThread();
       pushToast("Reply deleted.", "success");
     } catch (e: unknown) {

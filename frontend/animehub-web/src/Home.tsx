@@ -121,8 +121,12 @@ export default function Home({ onLogout }: HomeProps) {
       seasonYear: x.seasonYear,
       averageScore: x.averageScore,
       popularity: x.popularity,
+      genres: [],
       trackingStatus: "PlanToWatch",
+      episodeProgress: 0,
       isFavorite: false,
+      rewatchCount: 0,
+      createdUtc: new Date().toISOString(),
     };
 
     setTrackingIds((prev) => new Set(prev).add(id));

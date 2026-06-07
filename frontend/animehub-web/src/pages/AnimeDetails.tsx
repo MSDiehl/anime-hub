@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { toPagedResult } from "../api/client";
-import { csrfFetch } from "../api/csrf";
+import { ApiClientError, apiGet, apiSend, toPagedResult } from "../api/client";
 import AppNav from "../components/AppNav";
 import { CoverFallback, EmptyState, SkeletonBlock, useConfirm, useToast } from "../components/Feedback";
 import { PlusIcon, SendIcon, StarIcon, TrashIcon } from "../components/Icons";
-import { getErrorMessage, readApiError } from "../utils/apiError";
+import { getErrorMessage } from "../utils/apiError";
 import { sanitizeAniListHtml } from "../utils/sanitizeAniListHtml";
 import AnimeOverviewPanel from "./anime-details/AnimeOverviewPanel";
 import AnimeRelationsPanel from "./anime-details/AnimeRelationsPanel";
@@ -297,15 +296,7 @@ export default function AnimeDetails({ onLogout }: Props) {
       setData(null);
 
       try {
-        const res = await csrfFetch(`/api/anime/${activeId}`, {
-          credentials: "include",
-        });
-        if (!res.ok) {
-          throw new Error(
-            await readApiError(res, "Failed to load anime details"),
-          );
-        }
-        const json = (await res.json()) as AnimeDetailsDto;
+        const json = await apiGet<AnimeDetailsDto>(`/api/anime/${activeId}`);
         if (!cancelled) setData(json);
       } catch (e: unknown) {
         if (!cancelled) {
@@ -339,24 +330,14 @@ export default function AnimeDetails({ onLogout }: Props) {
       setTrackedShow(null);
 
       try {
-        const res = await csrfFetch(`/api/tracked/${activeId}`, {
-          credentials: "include",
-        });
-
-        if (res.status === 404) {
+        const json = await apiGet<TrackedShow>(`/api/tracked/${activeId}`);
+        if (!cancelled) setTrackedShow(json);
+      } catch (e: unknown) {
+        if (e instanceof ApiClientError && e.status === 404) {
           if (!cancelled) setTrackedShow(null);
           return;
         }
 
-        if (!res.ok) {
-          throw new Error(
-            await readApiError(res, "Failed to load tracking details"),
-          );
-        }
-
-        const json = (await res.json()) as TrackedShow;
-        if (!cancelled) setTrackedShow(json);
-      } catch (e: unknown) {
         if (!cancelled) {
           setTrackingError(
             getErrorMessage(e, "Failed to load tracking details"),
@@ -452,33 +433,19 @@ export default function AnimeDetails({ onLogout }: Props) {
     if (optimistic) setTrackedShow(optimistic);
 
     try {
-      const res = await csrfFetch("/api/tracked", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(payload),
-      });
-
-      if (res.status === 409) {
-        const existing = await csrfFetch(`/api/tracked/${activeId}`, {
-          credentials: "include",
-        });
-        if (existing.ok) {
-          setTrackedShow((await existing.json()) as TrackedShow);
-        } else {
+      setTrackedShow(await apiSend<TrackedShow>("/api/tracked", "POST", payload));
+      pushToast("Show tracked.", "success");
+    } catch (e: unknown) {
+      if (e instanceof ApiClientError && e.status === 409) {
+        try {
+          setTrackedShow(await apiGet<TrackedShow>(`/api/tracked/${activeId}`));
+        } catch {
           setTrackedShow(previousTrackedShow);
         }
         pushToast("Show is already tracked.", "info");
         return;
       }
 
-      if (!res.ok) {
-        throw new Error(await readApiError(res, "Failed to track show"));
-      }
-
-      setTrackedShow((await res.json()) as TrackedShow);
-      pushToast("Show tracked.", "success");
-    } catch (e: unknown) {
       const message = getErrorMessage(e, "Failed to track show");
       setTrackedShow(previousTrackedShow);
       setTrackingError(message);
@@ -500,18 +467,7 @@ export default function AnimeDetails({ onLogout }: Props) {
     setTrackedShow({ ...trackedShow, ...patch });
 
     try {
-      const res = await csrfFetch(`/api/tracked/${activeId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(patch),
-      });
-
-      if (!res.ok) {
-        throw new Error(await readApiError(res, "Failed to update show"));
-      }
-
-      setTrackedShow((await res.json()) as TrackedShow);
+      setTrackedShow(await apiSend<TrackedShow>(`/api/tracked/${activeId}`, "PATCH", patch));
     } catch (e: unknown) {
       const message = getErrorMessage(e, "Failed to update show");
       setTrackedShow(previousTrackedShow);
@@ -538,18 +494,17 @@ export default function AnimeDetails({ onLogout }: Props) {
     setTrackedShow(null);
 
     try {
-      const res = await csrfFetch(`/api/tracked/${activeId}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-
-      if (!res.ok && res.status !== 404) {
-        throw new Error(await readApiError(res, "Failed to untrack show"));
-      }
+      await apiSend<void>(`/api/tracked/${activeId}`, "DELETE");
 
       setTrackedShow(null);
       pushToast("Show untracked.", "success");
     } catch (e: unknown) {
+      if (e instanceof ApiClientError && e.status === 404) {
+        setTrackedShow(null);
+        pushToast("Show untracked.", "success");
+        return;
+      }
+
       const message = getErrorMessage(e, "Failed to untrack show");
       setTrackedShow(previousTrackedShow);
       setTrackingError(message);
@@ -564,13 +519,7 @@ export default function AnimeDetails({ onLogout }: Props) {
     setThreadsErr(null);
     try {
       const epQ = discEpisode ? `?episode=${discEpisode}` : "";
-      const res = await csrfFetch(`/api/discussions/anime/${activeId}${epQ}`, {
-        credentials: "include",
-      });
-      if (!res.ok) {
-        throw new Error(await readApiError(res, "Failed to load discussions"));
-      }
-      const json = (await res.json()) as ThreadPage | ThreadSummary[];
+      const json = await apiGet<ThreadPage | ThreadSummary[]>(`/api/discussions/anime/${activeId}${epQ}`);
       setThreads(toPagedResult(json, 1, 25).items);
     } catch (e: unknown) {
       setThreadsErr(getErrorMessage(e, "Failed to load discussions"));
@@ -585,14 +534,7 @@ export default function AnimeDetails({ onLogout }: Props) {
     setThreadErr(null);
     if (showLoading) setThread(null);
     try {
-      const res = await csrfFetch(`/api/discussions/thread/${threadId}`, {
-        credentials: "include",
-      });
-      if (!res.ok) {
-        throw new Error(await readApiError(res, "Failed to load thread"));
-      }
-      const json = (await res.json()) as ThreadDetail;
-      setThread(json);
+      setThread(await apiGet<ThreadDetail>(`/api/discussions/thread/${threadId}`));
     } catch (e: unknown) {
       setThreadErr(getErrorMessage(e, "Failed to load thread"));
     } finally {
@@ -639,16 +581,11 @@ export default function AnimeDetails({ onLogout }: Props) {
 
     try {
       const epQ = discEpisode ? `?episode=${discEpisode}` : "";
-      const res = await csrfFetch(`/api/discussions/anime/${activeId}${epQ}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ title, body }),
-      });
-
-      if (!res.ok) {
-        throw new Error(await readApiError(res, "Failed to create thread"));
-      }
+      await apiSend<{ id: string }>(
+        `/api/discussions/anime/${activeId}${epQ}`,
+        "POST",
+        { title, body },
+      );
 
       await loadThreads();
       pushToast("Thread posted.", "success");
@@ -686,19 +623,11 @@ export default function AnimeDetails({ onLogout }: Props) {
     });
 
     try {
-      const res = await csrfFetch(
+      await apiSend<{ id: string }>(
         `/api/discussions/thread/${selectedThreadId}/comments`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ body }),
-        },
+        "POST",
+        { body },
       );
-
-      if (!res.ok) {
-        throw new Error(await readApiError(res, "Failed to post reply"));
-      }
 
       await loadThread(selectedThreadId, false);
       await loadThreads();
@@ -1421,7 +1350,7 @@ export default function AnimeDetails({ onLogout }: Props) {
                   maxLength={5000}
                 />
 
-                {threadsErr && (
+                {threadsErr && threads.length > 0 && (
                   <div className="adInlineError">
                     <b>WHAM!</b> {threadsErr}
                   </div>
@@ -1452,6 +1381,15 @@ export default function AnimeDetails({ onLogout }: Props) {
                       <SkeletonBlock rows={2} />
                     </div>
                   ))
+                ) : threadsErr && threads.length === 0 ? (
+                  <div className="adThreadEmpty">
+                    <EmptyState
+                      actionLabel="Retry"
+                      message={threadsErr}
+                      onAction={loadThreads}
+                      title="Could not load threads"
+                    />
+                  </div>
                 ) : threads.length === 0 ? (
                   <div className="adThreadEmpty">
                     <EmptyState

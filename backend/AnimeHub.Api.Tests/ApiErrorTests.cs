@@ -26,4 +26,13 @@ public class ApiErrorTests
 
         Assert.Equal(fieldErrors, error.Errors);
     }
+
+    [Fact]
+    public void RateLimitedFactoryCreatesStableRateLimitCode()
+    {
+        var error = ApiError.RateLimited("Too many requests.");
+
+        Assert.Equal("rate_limited", error.Code);
+        Assert.Equal("Too many requests.", error.Message);
+    }
 }

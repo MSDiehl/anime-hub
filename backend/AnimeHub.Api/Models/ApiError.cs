@@ -19,4 +19,7 @@ public sealed record ApiError(
 
     public static ApiError Upstream(string message) =>
         new("upstream_error", message);
+
+    public static ApiError RateLimited(string message) =>
+        new("rate_limited", message);
 }

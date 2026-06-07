@@ -1,47 +1,19 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { csrfFetch } from "../api/csrf";
+import {
+  apiDownload,
+  apiGet,
+  apiSend,
+  type TrackedShow,
+  type TrackingStatus,
+} from "../api/client";
 import AppNav from "../components/AppNav";
 import { CoverFallback, EmptyState, SkeletonBlock, useConfirm, useToast } from "../components/Feedback";
 import { StarIcon, TrashIcon } from "../components/Icons";
-import { getErrorMessage, readApiError } from "../utils/apiError";
+import { getErrorMessage } from "../utils/apiError";
 import "./Dashboard.css";
 
 type Props = { onLogout: () => void | Promise<void> };
-
-type TrackingStatus =
-  | "Watching"
-  | "Completed"
-  | "Paused"
-  | "Dropped"
-  | "PlanToWatch";
-
-type TrackedShow = {
-  id: string;
-  aniListId: number;
-  title: string;
-  coverImageUrl?: string | null;
-  format?: string | null;
-  status?: string | null;
-  episodes?: number | null;
-  season?: string | null;
-  seasonYear?: number | null;
-  averageScore?: number | null;
-  popularity?: number | null;
-  genres: string[];
-  trackingStatus: TrackingStatus;
-  episodeProgress: number;
-  nextEpisode?: number | null;
-  personalRating?: number | null;
-  isFavorite: boolean;
-  notes?: string | null;
-  review?: string | null;
-  rewatchCount: number;
-  startedOn?: string | null;
-  completedOn?: string | null;
-  createdUtc: string;
-  updatedUtc?: string | null;
-};
 
 type ScheduleItem = {
   aniListId: number;
@@ -118,9 +90,7 @@ export default function Dashboard({ onLogout }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const res = await csrfFetch("/api/tracked", { credentials: "include" });
-      if (!res.ok) throw new Error(await readApiError(res));
-      setItems(await res.json());
+      setItems(await apiGet<TrackedShow[]>("/api/tracked"));
     } catch (e: unknown) {
       setError(getErrorMessage(e, "Failed to load tracked shows"));
       setItems([]);
@@ -132,12 +102,9 @@ export default function Dashboard({ onLogout }: Props) {
   async function loadAiringToday() {
     setAiringLoading(true);
     try {
-      const res = await csrfFetch(
+      setAiringToday(await apiGet<ScheduleItem[]>(
         `/api/schedule/week?start=${encodeURIComponent(todayIso())}&days=1&trackedOnly=true`,
-        { credentials: "include" },
-      );
-      if (!res.ok) throw new Error(await readApiError(res));
-      setAiringToday(await res.json());
+      ));
     } catch {
       setAiringToday([]);
     } finally {
@@ -157,14 +124,7 @@ export default function Dashboard({ onLogout }: Props) {
     );
 
     try {
-      const res = await csrfFetch(`/api/tracked/${aniListId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(patch),
-      });
-      if (!res.ok) throw new Error(await readApiError(res, "Failed to update show"));
-      const updated = (await res.json()) as TrackedShow;
+      const updated = await apiSend<TrackedShow>(`/api/tracked/${aniListId}`, "PATCH", patch);
       setItems((prev) => prev.map((item) => (item.aniListId === aniListId ? updated : item)));
     } catch (e: unknown) {
       setItems(previousItems);
@@ -188,11 +148,7 @@ export default function Dashboard({ onLogout }: Props) {
     setItems((prev) => prev.filter((show) => show.aniListId !== aniListId));
 
     try {
-      const res = await csrfFetch(`/api/tracked/${aniListId}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error(await readApiError(res, "Failed to untrack show"));
+      await apiSend<void>(`/api/tracked/${aniListId}`, "DELETE");
       setNotice("Show removed from your tracked list.");
       pushToast(`${item?.title ?? "Show"} removed.`, "success");
     } catch (e: unknown) {
@@ -205,12 +161,7 @@ export default function Dashboard({ onLogout }: Props) {
   async function exportTracked(format: "json" | "csv") {
     setNotice(null);
     try {
-      const res = await csrfFetch(`/api/tracked/export?format=${format}`, {
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error(await readApiError(res, "Export failed"));
-
-      const blob = await res.blob();
+      const blob = await apiDownload(`/api/tracked/export?format=${format}`);
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -236,14 +187,11 @@ export default function Dashboard({ onLogout }: Props) {
         ? parseTrackedCsv(text)
         : JSON.parse(text);
 
-      const res = await csrfFetch("/api/tracked/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error(await readApiError(res, "Import failed"));
-      const result = await res.json();
+      const result = await apiSend<{ created: number; updated: number }>(
+        "/api/tracked/import",
+        "POST",
+        payload,
+      );
       setNotice(`Imported ${result.created} new and updated ${result.updated} shows.`);
       pushToast("Import complete.", "success");
       await load();
@@ -418,11 +366,20 @@ export default function Dashboard({ onLogout }: Props) {
         </div>
 
         {notice && <div className="dashPanel dashNotice">{notice}</div>}
-        {error && <div className="dashPanel dashError">{error}</div>}
+        {error && items.length > 0 && <div className="dashPanel dashError">{error}</div>}
 
         {loading ? (
           <div className="dashPanel dashSkeletonPanel">
             <SkeletonBlock rows={4} />
+          </div>
+        ) : error && items.length === 0 ? (
+          <div className="dashPanel dashEmptyPanel">
+            <EmptyState
+              actionLabel="Retry"
+              message={error}
+              onAction={load}
+              title="Could not load tracked shows"
+            />
           </div>
         ) : items.length === 0 ? (
           <div className="dashPanel dashEmptyPanel">

@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -46,6 +47,7 @@ public class AuthController : ControllerBase
         return Ok(new CsrfResponse { Token = tokens.RequestToken ?? "" });
     }
 
+    [EnableRateLimiting("auth")]
     [HttpPost("register")]
     public async Task<ActionResult> Register([FromBody] RegisterRequest req, CancellationToken cancellationToken)
     {
@@ -84,6 +86,7 @@ public class AuthController : ControllerBase
         return Ok(await ToMeDto(user));
     }
 
+    [EnableRateLimiting("auth")]
     [HttpPost("login")]
     public async Task<ActionResult> Login([FromBody] LoginRequest req)
     {
@@ -103,6 +106,7 @@ public class AuthController : ControllerBase
         return Ok(await ToMeDto(user));
     }
 
+    [EnableRateLimiting("auth")]
     [HttpGet("confirm-email")]
     public async Task<ActionResult> ConfirmEmailLink([FromQuery] Guid userId, [FromQuery] string token)
     {
@@ -112,6 +116,7 @@ public class AuthController : ControllerBase
             : BadRequest(ApiError.Validation("Email confirmation failed.", ToIdentityErrors(result)));
     }
 
+    [EnableRateLimiting("auth")]
     [HttpPost("confirm-email")]
     public async Task<ActionResult> ConfirmEmail([FromBody] ConfirmEmailRequest req)
     {
@@ -129,6 +134,7 @@ public class AuthController : ControllerBase
         return Ok(new { confirmed = true });
     }
 
+    [EnableRateLimiting("auth")]
     [HttpPost("resend-confirmation")]
     public async Task<ActionResult<AuthWorkflowResponse>> ResendConfirmation(
         [FromBody] ResendEmailConfirmationRequest req,
@@ -153,6 +159,7 @@ public class AuthController : ControllerBase
         });
     }
 
+    [EnableRateLimiting("auth")]
     [HttpPost("forgot-password")]
     public async Task<ActionResult<AuthWorkflowResponse>> ForgotPassword(
         [FromBody] ForgotPasswordRequest req,
@@ -178,6 +185,7 @@ public class AuthController : ControllerBase
         });
     }
 
+    [EnableRateLimiting("auth")]
     [HttpPost("reset-password")]
     public async Task<ActionResult> ResetPassword([FromBody] ResetPasswordRequest req)
     {
@@ -200,6 +208,7 @@ public class AuthController : ControllerBase
     }
 
     [Authorize]
+    [EnableRateLimiting("auth")]
     [HttpPost("change-password")]
     public async Task<ActionResult> ChangePassword([FromBody] ChangePasswordRequest req)
     {
@@ -217,6 +226,7 @@ public class AuthController : ControllerBase
         return Ok(new { changed = true });
     }
 
+    [EnableRateLimiting("auth")]
     [HttpPost("logout")]
     public async Task<ActionResult> Logout()
     {
@@ -235,6 +245,7 @@ public class AuthController : ControllerBase
     }
 
     [Authorize]
+    [EnableRateLimiting("auth")]
     [HttpPatch("me")]
     public async Task<ActionResult> UpdateMe([FromBody] UpdateProfileRequest req)
     {
@@ -277,6 +288,7 @@ public class AuthController : ControllerBase
     }
 
     [Authorize]
+    [EnableRateLimiting("auth")]
     [HttpDelete("me")]
     public async Task<ActionResult> DeleteMe([FromBody] DeleteAccountRequest req)
     {

@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { csrfFetch } from "../api/csrf";
+import { apiGet, apiSend } from "../api/client";
 import AppNav from "../components/AppNav";
 import { CoverFallback, EmptyState, SkeletonBlock, useConfirm, useToast } from "../components/Feedback";
 import { TrashIcon } from "../components/Icons";
-import { getErrorMessage, readApiError } from "../utils/apiError";
+import { getErrorMessage } from "../utils/apiError";
 import { Avatar } from "./Forums";
 import "./Forums.css";
 
@@ -80,17 +80,12 @@ export default function UserProfile({ onLogout }: Props) {
     setError(null);
 
     try {
-      const [meRes, profileRes] = await Promise.all([
-        csrfFetch("/api/auth/me", { credentials: "include" }),
-        csrfFetch(`/api/users/${userId}`, { credentials: "include" }),
+      const [currentUser, json] = await Promise.all([
+        apiGet<Me>("/api/auth/me").catch(() => null),
+        apiGet<UserProfileDto>(`/api/users/${userId}`),
       ]);
 
-      if (meRes.ok) setMe((await meRes.json()) as Me);
-      if (!profileRes.ok) {
-        throw new Error(await readApiError(profileRes, "Failed to load profile"));
-      }
-
-      const json = (await profileRes.json()) as UserProfileDto;
+      setMe(currentUser);
       setProfile(json);
       setDisplayName(json.displayName);
       setAvatarUrl(json.avatarUrl ?? "");
@@ -113,18 +108,11 @@ export default function UserProfile({ onLogout }: Props) {
     setError(null);
 
     try {
-      const res = await csrfFetch("/api/auth/me", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          displayName,
-          avatarUrl,
-          isProfilePublic,
-        }),
+      await apiSend<Me>("/api/auth/me", "PATCH", {
+        displayName,
+        avatarUrl,
+        isProfilePublic,
       });
-
-      if (!res.ok) throw new Error(await readApiError(res, "Failed to save profile"));
       await load();
       pushToast("Profile saved.", "success");
     } catch (e: unknown) {
@@ -142,14 +130,7 @@ export default function UserProfile({ onLogout }: Props) {
     setAccountNotice(null);
 
     try {
-      const res = await csrfFetch("/api/auth/change-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ currentPassword, newPassword }),
-      });
-
-      if (!res.ok) throw new Error(await readApiError(res, "Failed to change password"));
+      await apiSend<void>("/api/auth/change-password", "POST", { currentPassword, newPassword });
       setCurrentPassword("");
       setNewPassword("");
       setAccountNotice("Password changed.");
@@ -177,14 +158,7 @@ export default function UserProfile({ onLogout }: Props) {
     setAccountNotice(null);
 
     try {
-      const res = await csrfFetch("/api/auth/me", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ password: deletePassword }),
-      });
-
-      if (!res.ok) throw new Error(await readApiError(res, "Failed to delete account"));
+      await apiSend<void>("/api/auth/me", "DELETE", { password: deletePassword });
       pushToast("Account deleted.", "success");
       await onLogout();
       navigate("/");

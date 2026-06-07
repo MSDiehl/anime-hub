@@ -4,6 +4,7 @@ using AnimeHub.Domain.Entities;
 using AnimeHub.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 namespace AnimeHub.Api.Controllers;
@@ -100,6 +101,7 @@ public class DiscussionsController : ControllerBase
     }
 
     // POST: /api/discussions/anime/{aniListId}?episode=12
+    [EnableRateLimiting("comments")]
     [HttpPost("anime/{aniListId:int}")]
     public async Task<ActionResult> CreateThread(
         [FromRoute] int aniListId,
@@ -287,6 +289,7 @@ public class DiscussionsController : ControllerBase
     }
 
     // POST: /api/discussions/thread/{threadId}/comments
+    [EnableRateLimiting("comments")]
     [HttpPost("thread/{threadId:guid}/comments")]
     public async Task<ActionResult> AddComment([FromRoute] Guid threadId, [FromBody] AddCommentRequest req)
     {
@@ -317,6 +320,7 @@ public class DiscussionsController : ControllerBase
         return Ok(new { id = comment.Id });
     }
 
+    [EnableRateLimiting("comments")]
     [HttpPatch("comments/{commentId:guid}")]
     public async Task<ActionResult<CommentDto>> UpdateComment(
         [FromRoute] Guid commentId,
@@ -343,6 +347,7 @@ public class DiscussionsController : ControllerBase
         return Ok(new { comment.Id });
     }
 
+    [EnableRateLimiting("comments")]
     [HttpDelete("comments/{commentId:guid}")]
     public async Task<ActionResult> DeleteComment([FromRoute] Guid commentId)
     {
@@ -364,6 +369,7 @@ public class DiscussionsController : ControllerBase
         return NoContent();
     }
 
+    [EnableRateLimiting("reactions")]
     [HttpPost("thread/{threadId:guid}/reactions")]
     public async Task<ActionResult<ReactionResultDto>> ToggleThreadReaction(
         [FromRoute] Guid threadId,
@@ -382,6 +388,7 @@ public class DiscussionsController : ControllerBase
         return Ok(result);
     }
 
+    [EnableRateLimiting("reactions")]
     [HttpPost("comments/{commentId:guid}/reactions")]
     public async Task<ActionResult<ReactionResultDto>> ToggleCommentReaction(
         [FromRoute] Guid commentId,
@@ -402,6 +409,7 @@ public class DiscussionsController : ControllerBase
         return Ok(result);
     }
 
+    [EnableRateLimiting("reports")]
     [HttpPost("thread/{threadId:guid}/reports")]
     public async Task<ActionResult> ReportThread([FromRoute] Guid threadId, [FromBody] ReportRequest req)
     {
@@ -429,6 +437,7 @@ public class DiscussionsController : ControllerBase
         return Ok(new { reported = true });
     }
 
+    [EnableRateLimiting("reports")]
     [HttpPost("comments/{commentId:guid}/reports")]
     public async Task<ActionResult> ReportComment([FromRoute] Guid commentId, [FromBody] ReportRequest req)
     {

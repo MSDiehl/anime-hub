@@ -1,4 +1,7 @@
+using System.Globalization;
 using System.Net.Http.Headers;
+using System.Security.Claims;
+using System.Threading.RateLimiting;
 using AnimeHub.Api.Models;
 using AnimeHub.Api.Middleware;
 using AnimeHub.Api.Services;
@@ -6,6 +9,7 @@ using AnimeHub.Infrastructure.Auth;
 using AnimeHub.Infrastructure.Data;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 LoadLocalDotEnv();
@@ -18,6 +22,30 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddHealthChecks();
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+        {
+            context.HttpContext.Response.Headers.RetryAfter =
+                Math.Ceiling(retryAfter.TotalSeconds).ToString(CultureInfo.InvariantCulture);
+        }
+
+        await context.HttpContext.Response.WriteAsJsonAsync(
+            ApiError.RateLimited("Too many requests. Try again shortly."),
+            cancellationToken);
+    };
+
+    options.AddPolicy("auth", context => FixedWindow(context, permitLimit: 12, window: TimeSpan.FromMinutes(5)));
+    options.AddPolicy("search", context => FixedWindow(context, permitLimit: 60, window: TimeSpan.FromMinutes(1)));
+    options.AddPolicy("comments", context => FixedWindow(context, permitLimit: 20, window: TimeSpan.FromMinutes(1)));
+    options.AddPolicy("reactions", context => FixedWindow(context, permitLimit: 90, window: TimeSpan.FromMinutes(1)));
+    options.AddPolicy("reports", context => FixedWindow(context, permitLimit: 6, window: TimeSpan.FromHours(1)));
+    options.AddPolicy("imports", context => FixedWindow(context, permitLimit: 4, window: TimeSpan.FromHours(1)));
+});
 
 builder.Services.AddAntiforgery(options =>
 {
@@ -164,9 +192,13 @@ app.UseHttpsRedirection();
 
 app.UseMiddleware<CorrelationIdMiddleware>();
 
+app.UseRouting();
+
 app.UseCors(CorsPolicyName);
 
 app.UseAuthentication();
+
+app.UseRateLimiter();
 
 app.Use(async (context, next) =>
 {
@@ -229,6 +261,28 @@ static bool RequiresCsrfValidation(HttpRequest request)
         HttpMethods.IsPut(request.Method) ||
         HttpMethods.IsPatch(request.Method) ||
         HttpMethods.IsDelete(request.Method);
+}
+
+static RateLimitPartition<string> FixedWindow(HttpContext context, int permitLimit, TimeSpan window)
+{
+    return RateLimitPartition.GetFixedWindowLimiter(
+        ClientPartitionKey(context),
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = permitLimit,
+            Window = window,
+            QueueLimit = 0,
+            AutoReplenishment = true
+        });
+}
+
+static string ClientPartitionKey(HttpContext context)
+{
+    var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (!string.IsNullOrWhiteSpace(userId))
+        return $"user:{userId}";
+
+    return $"ip:{context.Connection.RemoteIpAddress?.ToString() ?? "unknown"}";
 }
 
 static void LoadLocalDotEnv()

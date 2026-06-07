@@ -1,6 +1,7 @@
 using AnimeHub.Api.Models;
 using AnimeHub.Api.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace AnimeHub.Api.Controllers;
 
@@ -15,6 +16,7 @@ public class AnimeController : ControllerBase
         _aniList = aniList;
     }
 
+    [EnableRateLimiting("search")]
     [HttpGet("search")]
     public async Task<ActionResult<PagedResult<AnimeSearchItem>>> Search(
         [FromQuery] string q,

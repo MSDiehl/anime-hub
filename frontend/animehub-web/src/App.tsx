@@ -8,10 +8,11 @@ import Forums from "./pages/Forums";
 import ForumThread from "./pages/ForumThread";
 import Schedule from "./pages/Schedule";
 import UserProfile from "./pages/UserProfile";
-import { clearCsrfToken, csrfFetch, refreshCsrfToken } from "./api/csrf";
+import { apiGet, apiSend } from "./api/client";
+import { clearCsrfToken, refreshCsrfToken } from "./api/csrf";
 import { SkeletonBlock } from "./components/Feedback";
 import { CheckIcon, KeyIcon, MailIcon, StarIcon } from "./components/Icons";
-import { getErrorMessage, readApiError } from "./utils/apiError";
+import { getErrorMessage } from "./utils/apiError";
 import "./App.css";
 
 type Me = {
@@ -31,22 +32,16 @@ export default function App() {
   async function refreshMe() {
     setLoading(true);
     try {
-      const res = await csrfFetch("/api/auth/me", { credentials: "include" });
-      if (!res.ok) {
-        setMe(null);
-      } else {
-        setMe(await res.json());
-      }
+      setMe(await apiGet<Me>("/api/auth/me"));
+    } catch {
+      setMe(null);
     } finally {
       setLoading(false);
     }
   }
 
   async function logout() {
-    await csrfFetch("/api/auth/logout", {
-      method: "POST",
-      credentials: "include",
-    });
+    await apiSend<void>("/api/auth/logout", "POST");
     clearCsrfToken();
     await refreshMe();
   }
@@ -137,15 +132,11 @@ function AuthPage({ onAuthed }: { onAuthed: () => Promise<void> | void }) {
     setBusy(true);
     try {
       if (mode === "forgot") {
-        const res = await csrfFetch("/api/auth/forgot-password", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ email }),
-        });
-
-        if (!res.ok) throw new Error(await readApiError(res, "Password reset failed"));
-        const json = (await res.json()) as AuthWorkflowResponse;
+        const json = await apiSend<AuthWorkflowResponse>(
+          "/api/auth/forgot-password",
+          "POST",
+          { email },
+        );
         setUserId(json.userId ?? "");
         setToken(json.developmentToken ?? "");
         setMode("reset");
@@ -154,14 +145,11 @@ function AuthPage({ onAuthed }: { onAuthed: () => Promise<void> | void }) {
       }
 
       if (mode === "reset") {
-        const res = await csrfFetch("/api/auth/reset-password", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ email, token, newPassword }),
-        });
-
-        if (!res.ok) throw new Error(await readApiError(res, "Password reset failed"));
+        await apiSend<void>(
+          "/api/auth/reset-password",
+          "POST",
+          { email, token, newPassword },
+        );
         setPassword("");
         setNewPassword("");
         setToken("");
@@ -171,14 +159,7 @@ function AuthPage({ onAuthed }: { onAuthed: () => Promise<void> | void }) {
       }
 
       if (mode === "confirm") {
-        const res = await csrfFetch("/api/auth/confirm-email", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ userId, token }),
-        });
-
-        if (!res.ok) throw new Error(await readApiError(res, "Email confirmation failed"));
+        await apiSend<void>("/api/auth/confirm-email", "POST", { userId, token });
         clearCsrfToken();
         await refreshCsrfToken();
         await onAuthed();
@@ -191,19 +172,9 @@ function AuthPage({ onAuthed }: { onAuthed: () => Promise<void> | void }) {
           ? { email, password }
           : { email, password, displayName };
 
-      const res = await csrfFetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(body),
-      });
-
-      if (!res.ok) {
-        throw new Error(await readApiError(res, "Auth failed"));
-      }
+      const json = await apiSend<AuthWorkflowResponse | Me>(url, "POST", body);
 
       if (mode === "register") {
-        const json = (await res.json()) as AuthWorkflowResponse | Me;
         if ("requiresEmailConfirmation" in json && json.requiresEmailConfirmation) {
           setUserId(json.userId ?? "");
           setToken(json.developmentToken ?? "");
@@ -228,14 +199,11 @@ function AuthPage({ onAuthed }: { onAuthed: () => Promise<void> | void }) {
     setNotice(null);
     setBusy(true);
     try {
-      const res = await csrfFetch("/api/auth/resend-confirmation", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ email }),
-      });
-      if (!res.ok) throw new Error(await readApiError(res, "Resend failed"));
-      const json = (await res.json()) as AuthWorkflowResponse;
+      const json = await apiSend<AuthWorkflowResponse>(
+        "/api/auth/resend-confirmation",
+        "POST",
+        { email },
+      );
       setUserId(json.userId ?? userId);
       setToken(json.developmentToken ?? token);
       setNotice("Confirmation email sent.");

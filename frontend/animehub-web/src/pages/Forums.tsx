@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  apiSend,
   getForumThreads,
   getMostDiscussed,
   type ForumThreadSummary,
   type PagedResult,
 } from "../api/client";
-import { csrfFetch } from "../api/csrf";
 import AppNav from "../components/AppNav";
 import { EmptyState, SkeletonBlock, useConfirm, useTextPrompt, useToast } from "../components/Feedback";
 import { SendIcon, TrashIcon } from "../components/Icons";
-import { getErrorMessage, readApiError } from "../utils/apiError";
+import { getErrorMessage } from "../utils/apiError";
 import { renderMarkdown } from "../utils/markdown";
 import "./Forums.css";
 
@@ -135,11 +135,10 @@ export default function Forums({ onLogout }: Props) {
 
     try {
       const episodeQuery = parsedEpisode ? `?episode=${parsedEpisode}` : "";
-      const res = await csrfFetch(`/api/discussions/anime/${parsedAnimeId}${episodeQuery}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
+      const json = await apiSend<CreateResult>(
+        `/api/discussions/anime/${parsedAnimeId}${episodeQuery}`,
+        "POST",
+        {
           title,
           body,
           category: threadCategory,
@@ -148,12 +147,8 @@ export default function Forums({ onLogout }: Props) {
             .map((item) => item.trim())
             .filter(Boolean),
           containsSpoilers,
-        }),
-      });
-
-      if (!res.ok) throw new Error(await readApiError(res, "Failed to create thread"));
-
-      const json = (await res.json()) as CreateResult;
+        },
+      );
       setAnimeId("");
       setEpisode("");
       setTitle("");
@@ -175,15 +170,11 @@ export default function Forums({ onLogout }: Props) {
 
   async function toggleReaction(threadId: string) {
     try {
-      const res = await csrfFetch(`/api/discussions/thread/${threadId}/reactions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ type: "upvote" }),
-      });
-
-      if (!res.ok) throw new Error(await readApiError(res, "Reaction failed"));
-      const json = (await res.json()) as ReactionResult;
+      const json = await apiSend<ReactionResult>(
+        `/api/discussions/thread/${threadId}/reactions`,
+        "POST",
+        { type: "upvote" },
+      );
       updateThread(threadId, {
         reactionCount: json.count,
         userReaction: json.userReaction ?? null,
@@ -206,13 +197,7 @@ export default function Forums({ onLogout }: Props) {
     if (reason === null) return;
 
     try {
-      const res = await csrfFetch(`/api/discussions/thread/${threadId}/reports`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ reason }),
-      });
-      if (!res.ok) throw new Error(await readApiError(res, "Report failed"));
+      await apiSend<void>(`/api/discussions/thread/${threadId}/reports`, "POST", { reason });
       pushToast("Report sent.", "success");
     } catch (e: unknown) {
       const message = getErrorMessage(e, "Report failed");
@@ -231,11 +216,7 @@ export default function Forums({ onLogout }: Props) {
     if (!confirmed) return;
 
     try {
-      const res = await csrfFetch(`/api/discussions/thread/${threadId}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error(await readApiError(res, "Delete failed"));
+      await apiSend<void>(`/api/discussions/thread/${threadId}`, "DELETE");
       setThreads((prev) => prev.filter((thread) => thread.id !== threadId));
       setHotThreads((prev) => prev.filter((thread) => thread.id !== threadId));
       pushToast("Thread deleted.", "success");
@@ -248,13 +229,11 @@ export default function Forums({ onLogout }: Props) {
 
   async function moderateThread(threadId: string, patch: { isPinned?: boolean; isLocked?: boolean }) {
     try {
-      const res = await csrfFetch(`/api/discussions/thread/${threadId}/moderation`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(patch),
-      });
-      if (!res.ok) throw new Error(await readApiError(res, "Moderation failed"));
+      await apiSend<ThreadSummary>(
+        `/api/discussions/thread/${threadId}/moderation`,
+        "PATCH",
+        patch,
+      );
       await loadThreads();
       await loadHotThreads();
       pushToast("Thread updated.", "success");
@@ -464,7 +443,7 @@ export default function Forums({ onLogout }: Props) {
           </button>
         </section>
 
-        {error && <div className="forumError">{error}</div>}
+        {error && threads.length > 0 && <div className="forumError">{error}</div>}
 
         <section className="forumThreadList">
           {loading ? (
@@ -473,6 +452,13 @@ export default function Forums({ onLogout }: Props) {
                 <SkeletonBlock rows={4} />
               </div>
             ))
+          ) : error && threads.length === 0 ? (
+            <EmptyState
+              actionLabel="Retry"
+              message={error}
+              onAction={loadThreads}
+              title="Could not load discussions"
+            />
           ) : threads.length === 0 ? (
             <EmptyState
               actionLabel="Start a thread"

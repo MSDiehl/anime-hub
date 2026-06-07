@@ -29,6 +29,13 @@ export type AnimeSearchItem = {
   coverImageUrl?: string | null;
 };
 
+export type TrackingStatus =
+  | "Watching"
+  | "Completed"
+  | "Paused"
+  | "Dropped"
+  | "PlanToWatch";
+
 export type TrackedShow = {
   id: string;
   aniListId: number;
@@ -41,11 +48,33 @@ export type TrackedShow = {
   seasonYear?: number | null;
   averageScore?: number | null;
   popularity?: number | null;
-  trackingStatus?: string | null;
-  isFavorite?: boolean;
+  genres: string[];
+  trackingStatus: TrackingStatus;
+  episodeProgress: number;
+  nextEpisode?: number | null;
+  personalRating?: number | null;
+  isFavorite: boolean;
+  notes?: string | null;
+  review?: string | null;
+  rewatchCount: number;
+  startedOn?: string | null;
+  completedOn?: string | null;
+  createdUtc: string;
+  updatedUtc?: string | null;
 };
 
-export type MostTrackedShow = Omit<TrackedShow, "id"> & {
+export type MostTrackedShow = {
+  aniListId: number;
+  title: string;
+  coverImageUrl?: string | null;
+  format?: string | null;
+  status?: string | null;
+  episodes?: number | null;
+  season?: string | null;
+  seasonYear?: number | null;
+  averageScore?: number | null;
+  popularity?: number | null;
+  genres: string[];
   trackedCount: number;
 };
 
@@ -109,6 +138,21 @@ export async function apiSend<T>(
       signal,
     },
   );
+}
+
+export async function apiDownload(path: string, signal?: AbortSignal) {
+  const res = await csrfFetch(path, {
+    credentials: "include",
+    signal,
+  });
+
+  if (!res.ok) {
+    const message = await readApiError(res);
+    const retryAfter = res.headers.get("retry-after");
+    throw new ApiClientError(message, res.status, retryAfter);
+  }
+
+  return res.blob();
 }
 
 export function searchAnime({ q, page = 1, perPage = 12 }: AnimeSearchParams, signal?: AbortSignal) {
@@ -201,7 +245,9 @@ async function apiFetch<T>(path: string, init: RequestInit = {}) {
   }
 
   if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
+
+  const text = await res.text();
+  return text ? (JSON.parse(text) as T) : (undefined as T);
 }
 
 export class ApiClientError extends Error {
